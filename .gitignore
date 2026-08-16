@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+
+# Credenciales - NUNCA commitear
+*.json.key
+service-account*.json
+.env
+.aws/
+.gcloud/
+
+# Benchmark crudo (los CSV agregados SI se commitean)
+benchmark/results/raw/*.json
+benchmark/results/raw/*.csv
+!benchmark/results/raw/.gitkeep
+
+# Docker / SO
+.DS_Store
+docker-compose.override.yml
+
+# Node
+node_modules/
