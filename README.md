@@ -111,6 +111,16 @@ make aws-up        # despliega en AWS
 make aws-down      # destruye AWS — CORRER SIEMPRE AL TERMINAR
 ```
 
+Mientras el Collector no exista (Fase 2), la Fase 1 se valida aparte: PostgreSQL en
+Docker y los dos servicios con `uv`, exportando los spans a consola.
+
+```bash
+bash scripts/dev-fase1.sh up      # PostgreSQL + service-a + service-b
+bash scripts/dev-fase1.sh smoke   # checkout OK, 409 sin stock, 404 SKU inexistente
+bash scripts/dev-fase1.sh spans   # resumen de los spans emitidos
+bash scripts/dev-fase1.sh down
+```
+
 | Servicio | URL local |
 |---|---|
 | Jaeger UI | http://localhost:16686 |
@@ -143,4 +153,5 @@ Checklist completo: `docs/CHECKLIST-RUBRICA.md` (se genera en la Fase 7).
 | `docker compose up` falla por memoria | Docker Desktop con < 8 GB | Settings → Resources → Memory 8–10 GB |
 | `brew install terraform` → "No available formula" | Terraform salió de homebrew-core (licencia BUSL) | `brew tap hashicorp/tap && brew install hashicorp/tap/terraform` |
 | `python3 --version` muestra 3.14 | Es el Python del sistema | Correcto: el proyecto se aísla con `uv venv --python 3.12` |
+| `bind: address already in use` en 5432 | Hay un PostgreSQL del sistema escuchando | El compose de desarrollo publica el **15432**; se cambia con `POSTGRES_HOST_PORT` |
 | `gcloud: command not found` tras instalar | Falta el `path.zsh.inc` en el perfil | `exec zsh` o correr `scripts/install-prereqs-macos.sh` |

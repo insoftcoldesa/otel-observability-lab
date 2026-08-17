@@ -1,4 +1,5 @@
 # Python
+.dev-logs/
 __pycache__/
 *.py[cod]
 .venv/
