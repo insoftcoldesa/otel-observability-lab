@@ -1,19 +1,28 @@
 """service-a — API de checkout.
 
-Fase 1, T1.1–T1.3: la instrumentacion es 100 % automatica
-(`opentelemetry-instrument uvicorn ...`). Los spans de negocio, las metricas
-y los logs con trace_id llegan en T1.4–T1.8.
+Fase 1 completa:
+  T1.3 auto-instrumentacion (`opentelemetry-instrument uvicorn ...`)
+  T1.4 spans de negocio  T1.5 metricas  T1.6 logs JSON  T1.7 OTLP  T1.8 fallos
 """
 
 import logging
 import os
+import time
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, Field
 
+from app.telemetry import (
+    checkout_duration_ms,
+    checkout_requests_total,
+    setup_logging,
+    tracer,
+)
+
 SERVICE_B_URL = os.environ.get("SERVICE_B_URL", "http://localhost:8001")
-SERVICE_B_TIMEOUT_S = float(os.environ.get("SERVICE_B_TIMEOUT_S", "5"))
+SERVICE_B_TIMEOUT_S = float(os.environ.get("SERVICE_B_TIMEOUT_S", "10"))
 
 # Catalogo de descuentos del laboratorio (porcentaje sobre el subtotal).
 DISCOUNTS = {
@@ -22,7 +31,7 @@ DISCOUNTS = {
     "UNIMINUTO5": 5.0,
 }
 
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging()
 log = logging.getLogger("service-a")
 
 app = FastAPI(title="service-a", description="Checkout")
@@ -40,31 +49,66 @@ class CheckoutRequest(BaseModel):
     discount_code: str | None = None
 
 
+# --- Logica de negocio, cada paso con su span (T1.4) -------------------------
+
+
 def validate_cart(req: CheckoutRequest) -> float:
     """Valida el carrito y devuelve el subtotal."""
-    skus = [item.sku for item in req.items]
-    if len(skus) != len(set(skus)):
-        raise HTTPException(status_code=400, detail="SKU repetido en el carrito")
-    return round(sum(item.qty * item.unit_price for item in req.items), 2)
+    with tracer.start_as_current_span("checkout.validate_cart") as span:
+        subtotal = round(sum(item.qty * item.unit_price for item in req.items), 2)
+        span.set_attribute("cart.items", len(req.items))
+        span.set_attribute("cart.value", subtotal)
+        span.set_attribute("cart.id", req.cart_id)
+
+        skus = [item.sku for item in req.items]
+        if len(skus) != len(set(skus)):
+            span.set_status(Status(StatusCode.ERROR, "SKU repetido en el carrito"))
+            log.warning("carrito invalido cart_id=%s: SKU repetido", req.cart_id)
+            raise HTTPException(status_code=400, detail="SKU repetido en el carrito")
+
+        log.info("carrito valido cart_id=%s items=%s subtotal=%s",
+                 req.cart_id, len(req.items), subtotal)
+        return subtotal
 
 
 def apply_discount(subtotal: float, code: str | None) -> tuple[float, float]:
     """Devuelve (total, porcentaje_aplicado). Un codigo desconocido no descuenta."""
-    pct = DISCOUNTS.get((code or "").upper(), 0.0)
-    total = round(subtotal * (1 - pct / 100), 2)
-    return total, pct
+    with tracer.start_as_current_span("checkout.apply_discount") as span:
+        normalizado = (code or "").upper()
+        pct = DISCOUNTS.get(normalizado, 0.0)
+        total = round(subtotal * (1 - pct / 100), 2)
+
+        span.set_attribute("discount.code", normalizado or "NONE")
+        span.set_attribute("discount.pct", pct)
+        span.set_attribute("discount.applied", pct > 0)
+        span.set_attribute("cart.total", total)
+
+        if code and pct == 0:
+            log.warning("codigo de descuento desconocido: %s", normalizado)
+        return total, pct
 
 
-def reserve_inventory(req: CheckoutRequest) -> list[dict]:
+def reserve_inventory(
+    req: CheckoutRequest, fail: bool = False, delay_ms: int = 0
+) -> list[dict]:
     """Llama a service-b. El header traceparent lo inyecta la auto-instrumentacion."""
     payload = {
         "cart_id": req.cart_id,
         "items": [{"sku": i.sku, "qty": i.qty} for i in req.items],
     }
+    # Los parametros de falla se reenvian para que el error ocurra en service-b:
+    # asi la traza de error abarca los dos servicios (evidencia de la Fase 3).
+    params: dict[str, str | int] = {}
+    if fail:
+        params["fail"] = "true"
+    if delay_ms:
+        params["delay"] = delay_ms
+
     try:
         resp = requests.post(
             f"{SERVICE_B_URL}/inventory/reserve",
             json=payload,
+            params=params,
             timeout=SERVICE_B_TIMEOUT_S,
         )
     except requests.RequestException as exc:
@@ -81,23 +125,45 @@ def reserve_inventory(req: CheckoutRequest) -> list[dict]:
     return resp.json()["reservations"]
 
 
-@app.post("/checkout")
-def checkout(req: CheckoutRequest) -> dict:
-    subtotal = validate_cart(req)
-    total, discount_pct = apply_discount(subtotal, req.discount_code)
-    reservations = reserve_inventory(req)
+# --- Endpoints ---------------------------------------------------------------
 
-    log.info("checkout ok cart_id=%s total=%s", req.cart_id, total)
-    return {
-        "cart_id": req.cart_id,
-        "items": len(req.items),
-        "subtotal": subtotal,
-        "discount_code": req.discount_code,
-        "discount_pct": discount_pct,
-        "total": total,
-        "reservations": reservations,
-        "status": "confirmed",
-    }
+
+@app.post("/checkout")
+def checkout(
+    req: CheckoutRequest,
+    # T1.8: inyeccion de fallos, para producir trazas de error y trazas lentas.
+    fail: bool = Query(False, description="Fuerza un 500 con el span en ERROR"),
+    delay: int = Query(0, ge=0, le=10_000, description="Latencia artificial en ms"),
+) -> dict:
+    inicio = time.perf_counter()
+    status = "server_error"
+    try:
+        subtotal = validate_cart(req)
+        total, discount_pct = apply_discount(subtotal, req.discount_code)
+        reservations = reserve_inventory(req, fail=fail, delay_ms=delay)
+    except HTTPException as exc:
+        status = "client_error" if exc.status_code < 500 else "server_error"
+        log.error("checkout fallido cart_id=%s http=%s: %s",
+                  req.cart_id, exc.status_code, exc.detail)
+        raise
+    else:
+        status = "success"
+        log.info("checkout ok cart_id=%s total=%s", req.cart_id, total)
+        return {
+            "cart_id": req.cart_id,
+            "items": len(req.items),
+            "subtotal": subtotal,
+            "discount_code": req.discount_code,
+            "discount_pct": discount_pct,
+            "total": total,
+            "reservations": reservations,
+            "status": "confirmed",
+        }
+    finally:
+        # Se registra dentro del span de servidor: eso es lo que permite el exemplar.
+        duracion_ms = (time.perf_counter() - inicio) * 1000
+        checkout_duration_ms.record(duracion_ms, {"status": status})
+        checkout_requests_total.add(1, {"status": status})
 
 
 @app.get("/health")

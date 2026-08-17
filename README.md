@@ -116,9 +116,18 @@ Docker y los dos servicios con `uv`, exportando los spans a consola.
 
 ```bash
 bash scripts/dev-fase1.sh up      # PostgreSQL + service-a + service-b
-bash scripts/dev-fase1.sh smoke   # checkout OK, 409 sin stock, 404 SKU inexistente
+bash scripts/dev-fase1.sh smoke   # éxito, 409 sin stock, 404 SKU, ?fail=true, ?delay=750
 bash scripts/dev-fase1.sh spans   # resumen de los spans emitidos
+bash scripts/dev-fase1.sh metrics # las 3 métricas de negocio
+bash scripts/dev-fase1.sh logs    # líneas JSON con trace_id y span_id
 bash scripts/dev-fase1.sh down
+```
+
+Inyección de fallos (T1.8), para generar trazas de error y trazas lentas:
+
+```bash
+curl -X POST 'localhost:8000/checkout?fail=true'  -H 'Content-Type: application/json' -d @carrito.json
+curl -X POST 'localhost:8000/checkout?delay=750'  -H 'Content-Type: application/json' -d @carrito.json
 ```
 
 | Servicio | URL local |
