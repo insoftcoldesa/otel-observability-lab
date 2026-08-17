@@ -136,6 +136,12 @@ Bajo el límite de 200 MB. Se quitó el extra `[standard]` de uvicorn
 
 ## Bitácora
 
+- **2026-08-17 (D1)** — Wiki de ingeniería en `docs/wiki/`: 12 páginas con el
+  paso a paso de la Fase 1 explicando qué se hace y por qué. **No se pudo usar el
+  Wiki de GitHub**: los wikis no existen en repos privados del plan gratuito
+  (la API acepta el `PATCH` pero `has_wiki` sigue en `false`). Queda
+  `scripts/publish-wiki.sh` listo para sincronizarlo el día que el repo sea
+  público o el wiki se inicialice. Sirve además de insumo para el reporte (T7.5).
 - **2026-08-17 (D1)** — T1.4–T1.8 cerradas: 3 spans de negocio, las 3 métricas,
   logs JSON correlacionados y la inyección de fallos. **Los exemplars ya salen del
   SDK con `trace_id` y `span_id`**, cuatro días antes del deadline duro del D5;

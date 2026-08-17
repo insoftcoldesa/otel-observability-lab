@@ -12,6 +12,7 @@ los tres pilares de telemetría, benchmark de overhead y despliegue en GCP y AWS
 | Plan de trabajo | [`docs/planeacion/CALENDARIO_ENTREGA_25AGO.md`](docs/planeacion/CALENDARIO_ENTREGA_25AGO.md) |
 | Detalle de tareas | [`docs/planeacion/CRONOGRAMA_LAB_OTEL.md`](docs/planeacion/CRONOGRAMA_LAB_OTEL.md) |
 | Estado en vivo | [`docs/PROGRESO.md`](docs/PROGRESO.md) |
+| **Wiki: cómo se construye cada fase paso a paso** | [`docs/wiki/Home.md`](docs/wiki/Home.md) |
 
 ---
 

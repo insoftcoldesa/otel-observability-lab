@@ -1,0 +1,16 @@
+### [Inicio](Home)
+
+**Fase 1 — Instrumentación**
+
+0. [Panorama](Fase-1-00-Panorama)
+1. [Preparar el entorno](Fase-1-01-Entorno)
+2. [Servicios y base de datos](Fase-1-02-Servicios)
+3. [Auto-instrumentación](Fase-1-03-Auto-instrumentacion)
+4. [Spans de negocio](Fase-1-04-Spans-de-negocio)
+5. [Métricas](Fase-1-05-Metricas)
+6. [Logs correlacionados](Fase-1-06-Logs)
+7. [Exportar por OTLP](Fase-1-07-OTLP)
+8. [Inyección de fallos](Fase-1-08-Inyeccion-de-fallos)
+9. [Empaquetar en Docker](Fase-1-09-Docker)
+10. [Verificación final](Fase-1-10-Verificacion)
+11. [Troubleshooting](Fase-1-11-Troubleshooting)
