@@ -1,0 +1,191 @@
+# OpenTelemetry Collector — stack LOCAL (criterio R2)
+#
+# El Collector existe para desacoplar la aplicacion de los backends. Sin el,
+# cada servicio tendria que saber que existen Jaeger, Prometheus y Loki, y
+# cambiar de backend obligaria a reconstruir y redesplegar los servicios. Con
+# el, la aplicacion solo conoce una direccion OTLP y el destino se decide aqui.
+# Eso es lo que permite que el MISMO binario exporte a Jaeger en local, a Cloud
+# Trace en GCP y a X-Ray en AWS (Fases 5 y 6) sin tocar una linea de codigo.
+
+# ---------------------------------------------------------------------------
+# RECEIVERS — por donde entra la telemetria
+# ---------------------------------------------------------------------------
+# Se abren los dos transportes de OTLP aunque los servicios solo usen gRPC.
+# Motivo: gRPC es el camino rapido para servidor-a-servidor, pero HTTP es el
+# unico que atraviesa proxies restrictivos y el unico que puede usar un
+# navegador. Tener 4318 abierto cuesta cero y evita quedar bloqueados si en la
+# Fase 5 o 6 algun entorno gestionado no deja pasar gRPC.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+# ---------------------------------------------------------------------------
+# PROCESSORS — EL ORDEN NO ES NEGOCIABLE
+# ---------------------------------------------------------------------------
+# memory_limiter -> resource -> batch
+#
+# Este orden es una recomendacion explicita del proyecto OpenTelemetry, y cada
+# posicion tiene una razon:
+#
+#   1. memory_limiter VA PRIMERO porque su trabajo es rechazar datos cuando la
+#      memoria aprieta. Si estuviera despues de batch, el Collector ya habria
+#      acumulado los lotes en memoria — es decir, ya habria gastado justo lo que
+#      el limitador intenta proteger. Un Collector que muere por OOM se lleva la
+#      telemetria de todo el sistema en el peor momento posible: durante un
+#      incidente, que es cuando mas trafico y mas trazas hay.
+#
+#   2. resource VA EN MEDIO porque debe etiquetar TODO lo que sobrevivio al
+#      limitador, y debe hacerlo ANTES de agrupar. Etiquetar despues de batch
+#      significaria recorrer lotes ya formados, mas costoso y mas fragil.
+#
+#   3. batch VA ULTIMO porque agrupar es lo unico que conviene hacer justo antes
+#      de salir por la red. Agrupar antes de filtrar seria trabajo desperdiciado
+#      sobre datos que quiza se van a descartar.
+processors:
+  # Frena la ingesta antes de que el proceso se quede sin memoria.
+  # limit_mib 400 sobre un contenedor de ~512 MB deja margen para el runtime de
+  # Go y su recolector de basura. spike_limit_mib 100 es el colchon para picos
+  # subitos: si el uso supera (limit - spike), el Collector empieza a rechazar.
+  # check_interval 1s porque un pico de telemetria se forma en segundos, no en
+  # minutos; revisar cada 5s llegaria tarde.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+  # Garantiza que TODA la telemetria lleve los atributos de entorno, venga de
+  # donde venga. Los servicios ya los mandan via OTEL_RESOURCE_ATTRIBUTES, pero
+  # eso depende de que cada servicio este bien configurado. Ponerlo tambien aqui
+  # es defensa en profundidad: si manana alguien despliega un servicio nuevo y
+  # olvida la variable, su telemetria igual queda etiquetada y no se pierde
+  # entre la de otros entornos. `upsert` sobrescribe si ya existe, que es lo que
+  # queremos: el Collector es la autoridad sobre en que entorno esta corriendo.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: local
+        action: upsert
+      - key: service.namespace
+        value: otel-lab
+        action: upsert
+
+  # Agrupa antes de exportar. Sin batch, cada span seria una llamada de red
+  # independiente: mas latencia, mas CPU y mas presion sobre los backends.
+  # timeout 5s es el compromiso entre frescura y eficiencia — en un laboratorio
+  # donde hay que ver la traza en Jaeger poco despues de lanzar el curl, esperar
+  # mas seria incomodo. send_batch_size 1024 es el tamano recomendado por
+  # defecto; por debajo se desperdicia la conexion, por encima crecen los picos
+  # de memoria que el memory_limiter tendria que contener.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+# ---------------------------------------------------------------------------
+# EXPORTERS — a donde sale cada pilar
+# ---------------------------------------------------------------------------
+exporters:
+  # TRAZAS -> Jaeger por OTLP nativo.
+  # Jaeger acepta OTLP desde la 1.35, asi que no hace falta el exporter
+  # `jaeger` (que ademas fue retirado del Collector). tls.insecure porque el
+  # trafico no sale de la red interna de Docker; en la nube esto cambia.
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # METRICAS -> Prometheus, modelo PULL.
+  # Aqui el Collector no envia: expone un endpoint /metrics en :8889 y espera a
+  # que Prometheus lo raspe. Es como funciona Prometheus y no se pelea con el.
+  #
+  # enable_open_metrics: true ES EL REQUISITO DE LOS EXEMPLARS. El formato
+  # clasico de exposicion de Prometheus no sabe representar exemplars; el
+  # formato OpenMetrics si. Sin esta linea, los exemplars que el SDK ya genera
+  # (verificado en la Fase 1) llegarian hasta aqui y se perderian en la salida.
+  #
+  # resource_to_telemetry_conversion convierte los atributos de recurso en
+  # etiquetas de metrica. Sin esto, todas las metricas llegarian a Prometheus
+  # sin `service_name` y seria imposible distinguir service-a de service-b en
+  # un panel. Es aceptable porque los atributos de recurso son de cardinalidad
+  # baja y conocida; convertir atributos arbitrarios seria peligroso.
+  #
+  # add_metric_suffixes: false evita que el exporter le pegue la unidad al
+  # nombre. Con el valor por defecto, `checkout_duration_ms` (unidad ms) se
+  # publica como `checkout_duration_ms_milliseconds`, que ademas de feo obliga
+  # a que las consultas PromQL del dashboard usen un nombre distinto al que
+  # declara el codigo. Se prefiere que el nombre sea el mismo de punta a punta.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    enable_open_metrics: true
+    add_metric_suffixes: false
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # LOGS -> Loki por OTLP/HTTP nativo.
+  # Se usa otlphttp y no el exporter `loki`: ese fue marcado como obsoleto y
+  # retirado del Collector, porque Loki 3.x ingiere OTLP directamente en
+  # /otlp/v1/logs. Menos traduccion en el camino y menos piezas que mantener.
+  # El campo trace_id viaja como structured metadata, que es lo que despues
+  # permite el salto log -> traza en Grafana (Fase 3).
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+  # Red de seguridad para depurar. verbosity: basic solo cuenta cuantos datos
+  # pasan; no vuelca el contenido, que inundaria el log del contenedor.
+  debug:
+    verbosity: basic
+
+# ---------------------------------------------------------------------------
+# EXTENSIONS
+# ---------------------------------------------------------------------------
+extensions:
+  # Endpoint de salud en :13133. Es lo que consulta el healthcheck de Docker
+  # Compose para decidir si el Collector esta listo. Sin el, los servicios
+  # podrian arrancar y exportar contra un Collector que todavia no escucha, y
+  # se perderia la telemetria de los primeros segundos.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+# ---------------------------------------------------------------------------
+# SERVICE — el cableado
+# ---------------------------------------------------------------------------
+service:
+  extensions: [health_check]
+
+  # El Collector tambien se observa a si mismo, y esto NO es un lujo: es la
+  # unica forma de saber si esta descartando telemetria. Un Collector saturado
+  # falla en silencio — los datos simplemente no llegan al backend, y sin estas
+  # metricas nadie se entera. De aqui salen `otelcol_exporter_send_failed_spans`
+  # y `otelcol_processor_dropped_spans`, que alimentan el panel de salud del
+  # dashboard de la Fase 3.
+  telemetry:
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+
+  # Tres pipelines, uno por pilar. Comparten receiver y processors —la misma
+  # politica de memoria y las mismas etiquetas para los tres— y se separan solo
+  # en el exporter, porque cada backend entiende un pilar.
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/loki]

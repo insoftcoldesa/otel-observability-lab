@@ -1,0 +1,17 @@
+# Proveedor de dashboards. Deja listo el mecanismo: cualquier JSON que se
+# ponga en observability/grafana/dashboards/ aparece en Grafana al arrancar,
+# sin importarlo a mano. Los 6 paneles llegan en T3.5 (Fase 3).
+
+apiVersion: 1
+
+providers:
+  - name: otel-lab
+    orgId: 1
+    folder: "OTel Lab"
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true      # se puede editar en la UI y exportar el JSON al repo
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

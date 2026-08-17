@@ -1,0 +1,75 @@
+# Datasources aprovisionados. Se declaran en codigo, no a mano por la interfaz,
+# porque R5 califica reproducibilidad: quien clone el repo debe tener Grafana
+# funcionando sin configurar nada.
+#
+# Los `uid` estan fijados a proposito. Los enlaces entre datasources (exemplars
+# y derived fields) apuntan por uid; si Grafana los generara al azar, esos
+# enlaces se romperian en cada maquina.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      # PUENTE METRICA -> TRAZA (base de T3.7).
+      # Cuando un punto de checkout_duration_ms trae un exemplar, Grafana
+      # dibuja un rombo sobre la grafica; al pulsarlo salta a Jaeger con ese
+      # trace_id. Es lo que convierte "el p99 subio" en "esta peticion concreta
+      # tardo 800 ms".
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: jaeger
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # PUENTE LOG -> TRAZA (base de T3.6).
+      #
+      # Cuando los logs entran por OTLP, el cuerpo de la linea es el mensaje
+      # plano y el trace_id viaja como STRUCTURED METADATA, no dentro del texto.
+      # Por eso el derived field principal usa matcherType: label y no un regex
+      # sobre el cuerpo: un regex tipo '"trace_id":"..."' no encontraria nada,
+      # porque ese JSON solo existe en stdout (docker logs), no en lo que
+      # recibe Loki. Verificado a la mala en la Fase 2.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: '$${__value.raw}'
+          datasourceUid: jaeger
+          urlDisplayLabel: "Ver traza en Jaeger"
+        # Respaldo para logs que si llegan como JSON en el cuerpo (por ejemplo
+        # si alguna vez se ingieren con promtail desde los logs de Docker).
+        - name: TraceIDenJSON
+          matcherType: regex
+          matcherRegex: '"trace_id":\s*"([a-f0-9]{32})"'
+          url: '$${__value.raw}'
+          datasourceUid: jaeger
+          urlDisplayLabel: "Ver traza en Jaeger"
+
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    jsonData:
+      # PUENTE TRAZA -> LOG (base de T3.6, sentido inverso).
+      # Desde una traza en Jaeger, Grafana ofrece "Logs for this span"
+      # consultando Loki por el mismo trace_id.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-2m"
+        spanEndTimeShift: "2m"
+        filterByTraceID: true
+        customQuery: true
+        # Sin `| json`: el trace_id es structured metadata, se filtra directo.
+        query: '{service_namespace="otel-lab"} | trace_id="$${__span.traceId}"'

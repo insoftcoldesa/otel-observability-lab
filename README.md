@@ -131,12 +131,15 @@ curl -X POST 'localhost:8000/checkout?fail=true'  -H 'Content-Type: application/
 curl -X POST 'localhost:8000/checkout?delay=750'  -H 'Content-Type: application/json' -d @carrito.json
 ```
 
-| Servicio | URL local |
-|---|---|
-| Jaeger UI | http://localhost:16686 |
-| Grafana | http://localhost:3000 (admin/admin) |
-| Prometheus | http://localhost:9090 |
-| service-a | http://localhost:8000/docs |
+| Servicio | URL local | Qué mirar |
+|---|---|---|
+| Jaeger UI | http://localhost:16686 | trazas: `service-a` → `POST /checkout` |
+| Grafana | http://localhost:3000 (admin/admin) | Explore sobre Prometheus, Loki y Jaeger |
+| Prometheus | http://localhost:9090 | `checkout_requests_total`, `checkout_duration_ms_bucket` |
+| Loki | http://localhost:3100 | vía Grafana: `{service_namespace="otel-lab"}` |
+| Collector | http://localhost:8889/metrics | métricas de las apps · :8888 salud del propio Collector |
+| service-a | http://localhost:8000/docs | Swagger |
+| service-b | http://localhost:8001/docs | Swagger |
 
 ---
 

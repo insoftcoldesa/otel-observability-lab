@@ -1,0 +1,274 @@
+# Stack local completo del laboratorio — 8 contenedores (criterio R2).
+#
+#   make local-up     levanta todo
+#   make local-ps     estado
+#   make smoke        genera trafico
+#   make local-down   baja todo y borra volumenes
+#
+# Todos los contenedores comparten una unica red interna. Dentro de ella se
+# habla por NOMBRE DE SERVICIO (postgres, otel-collector, jaeger...), nunca por
+# localhost ni por IP: los nombres los resuelve el DNS interno de Docker y son
+# estables entre reinicios.
+
+name: otel-lab
+
+x-otel-common: &otel-common
+  # Configuracion OTLP compartida por los dos servicios. La aplicacion solo
+  # conoce esta direccion; que detras haya Jaeger, Prometheus y Loki es asunto
+  # del Collector. Ese desacople es el argumento central de R2.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: otlp
+  OTEL_LOGS_EXPORTER: otlp
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local,service.namespace=otel-lab
+  # Sin esta variable el SDK no engancha el handler que exporta logs por OTLP,
+  # y no avisa de nada. Se descubrio a la mala en la Fase 1.
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  # Exemplars: enlazan cada punto del histograma con el trace_id que lo produjo.
+  OTEL_METRICS_EXEMPLAR_FILTER: trace_based
+  # 15s en vez de los 60s por defecto: en un laboratorio no se puede esperar un
+  # minuto para ver si la metrica llego.
+  OTEL_METRIC_EXPORT_INTERVAL: "15000"
+
+services:
+  # -------------------------------------------------------------------------
+  # 1. PostgreSQL — la base de datos que instrumenta service-b
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: otel-lab-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-inventory}
+      POSTGRES_USER: ${POSTGRES_USER:-otel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-otel_lab_2026}
+    ports:
+      # 15432 en el host porque 5432-5434 suelen estar ocupados por un
+      # PostgreSQL del sistema. Dentro de la red sigue siendo 5432.
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - ./services/service-b/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-otel} -d ${POSTGRES_DB:-inventory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 2. Jaeger — backend de TRAZAS
+  # -------------------------------------------------------------------------
+  # all-in-one mete recolector, almacenamiento y UI en un contenedor. El
+  # almacenamiento es en memoria: al bajar el stack se pierden las trazas, y
+  # esta bien — las capturas de evidencia se toman en caliente.
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: otel-lab-jaeger
+    environment:
+      # Jaeger habla OTLP nativo desde la 1.35, asi que el Collector le exporta
+      # directo sin traducir formatos.
+      COLLECTOR_OTLP_ENABLED: "true"
+      METRICS_STORAGE_TYPE: prometheus
+      SPAN_STORAGE_TYPE: memory
+    ports:
+      - "16686:16686"   # UI
+    healthcheck:
+      # 14269 es el puerto de administracion de Jaeger.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 3. Prometheus — backend de METRICAS
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: otel-lab-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=24h
+      # SIN ESTA BANDERA NO HAY EXEMPLARS. Prometheus los descarta al ingerir
+      # aunque el Collector los exponga en formato OpenMetrics. Es el requisito
+      # que faltaba para cerrar T3.7.
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 4. Loki — backend de LOGS
+  # -------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: otel-lab-loki
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - lokidata:/loki
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 5. OTel Collector — la pieza central de R2
+  # -------------------------------------------------------------------------
+  otel-collector:
+    build:
+      context: ./collector
+      # Imagen propia solo para el healthcheck: la oficial es distroless y no
+      # tiene con que responder. Ver collector/Dockerfile.
+      dockerfile: Dockerfile
+    image: otel-lab/collector:local
+    container_name: otel-lab-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./collector/otel-collector-local.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # metricas del propio Collector
+      - "8889:8889"   # metricas de las aplicaciones, para Prometheus
+    # Arranca despues de sus destinos: si exportara contra backends que aun no
+    # escuchan, los reintentos llenarian el log de errores en cada arranque.
+    depends_on:
+      jaeger:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/busybox", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    # Coherente con memory_limiter (limit_mib 400 + spike 100): el limitador
+    # debe actuar ANTES de que Docker mate el contenedor por OOM.
+    mem_limit: 512m
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 6. Grafana — visualizacion y correlacion
+  # -------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: otel-lab-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"      # capturas sin pantalla de login
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: light          # las capturas se leen mejor en claro
+      # traceToLogs / exemplars necesitan estas features en 11.x
+      GF_FEATURE_TOGGLES_ENABLE: traceToProfiles,correlations
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 7. service-b — inventario
+  # -------------------------------------------------------------------------
+  service-b:
+    build:
+      context: ./services/service-b
+    image: otel-lab/service-b:local
+    container_name: otel-lab-service-b
+    environment:
+      <<: *otel-common
+      OTEL_SERVICE_NAME: service-b
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-inventory}
+      POSTGRES_USER: ${POSTGRES_USER:-otel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-otel_lab_2026}
+      PORT: "8001"
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      # La imagen es python:3.12-slim y no trae curl. Se usa el propio Python,
+      # que ya esta ahi: cero paquetes extra y cero peso en la imagen.
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 8. service-a — checkout
+  # -------------------------------------------------------------------------
+  service-a:
+    build:
+      context: ./services/service-a
+    image: otel-lab/service-a:local
+    container_name: otel-lab-service-a
+    environment:
+      <<: *otel-common
+      OTEL_SERVICE_NAME: service-a
+      SERVICE_B_URL: http://service-b:8001
+      PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      service-b:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks: [otel-lab]
+
+networks:
+  otel-lab:
+    driver: bridge
+
+volumes:
+  pgdata:
+  promdata:
+  lokidata:
+  grafanadata:

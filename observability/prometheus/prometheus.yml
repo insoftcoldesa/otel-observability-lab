@@ -1,0 +1,35 @@
+# Prometheus — stack local del laboratorio
+#
+# Prometheus no recibe metricas: las raspa. Por eso el Collector expone un
+# endpoint y aqui se declara a quien hay que ir a buscar.
+
+global:
+  # 15s es el intervalo estandar de la industria. Mas fino genera series de mas
+  # sin aportar precision a un laboratorio; mas grueso hace que un pico de
+  # latencia de 30 segundos pase desapercibido entre dos muestras.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: otel-lab-local
+
+scrape_configs:
+  # Metricas DE LAS APLICACIONES, reexpuestas por el Collector.
+  # Aqui viven checkout_requests_total, checkout_duration_ms e
+  # inventory_reserved_items, con sus exemplars.
+  - job_name: otel-collector-apps
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # Metricas DEL PROPIO COLLECTOR. Responden "el pipeline esta sano?":
+  # otelcol_exporter_send_failed_spans, otelcol_processor_dropped_spans,
+  # otelcol_receiver_accepted_spans. Sin esto, un Collector que descarta datos
+  # falla en silencio.
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  # Prometheus se raspa a si mismo. Sirve para distinguir "no hay datos porque
+  # el sistema esta parado" de "no hay datos porque Prometheus esta roto".
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

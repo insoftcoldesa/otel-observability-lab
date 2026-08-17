@@ -33,11 +33,24 @@ comando no da lo que dice la página, no sigas a la siguiente.
 
 ---
 
+---
+
+## Guía de la Fase 2 — Collector y stack local (criterio R2)
+
+| # | Página | Qué aprendes |
+|---|---|---|
+| 0 | [Panorama del Collector](Fase-2-00-Panorama.md) | Por qué existe el Collector y qué problema resuelve |
+| 1 | [La configuración del Collector](Fase-2-01-Collector.md) | Receivers, el orden de los processors, exporters, pipelines |
+| 2 | [Los backends](Fase-2-02-Backends.md) | Jaeger, Prometheus, Loki y Grafana: por qué cada uno |
+| 3 | [El docker-compose de 8 servicios](Fase-2-03-Compose.md) | Healthchecks, orden de arranque, red interna |
+| 4 | [Verificación y hallazgos](Fase-2-04-Verificacion.md) | Los 3 pilares comprobados y lo que no salió según el plan |
+
+---
+
 ## Fases siguientes
 
 | Fase | Criterio | Estado |
 |---|---|---|
-| Fase 2 — OTel Collector y stack local | R2 | pendiente |
 | Fase 3 — Correlación cross-signal | R3 | pendiente |
 | Fase 4 — Benchmark de overhead | R4 | pendiente |
 | Fase 5 y 6 — GCP y AWS | R2, R5 | pendiente |

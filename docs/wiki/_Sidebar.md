@@ -14,3 +14,11 @@
 9. [Empaquetar en Docker](Fase-1-09-Docker)
 10. [Verificación final](Fase-1-10-Verificacion)
 11. [Troubleshooting](Fase-1-11-Troubleshooting)
+
+**Fase 2 — Collector y stack local**
+
+0. [Panorama](Fase-2-00-Panorama)
+1. [Configuración del Collector](Fase-2-01-Collector)
+2. [Los backends](Fase-2-02-Backends)
+3. [El docker-compose](Fase-2-03-Compose)
+4. [Verificación y hallazgos](Fase-2-04-Verificacion)

@@ -7,7 +7,7 @@
 | Criterio | Estado | Evidencia | Bloqueo |
 |---|---|---|---|
 | R1 Instrumentación OTel SDK | 🟨 Código completo | T1.1–T1.8 verificados en local; los 3 pilares llegan por OTLP/gRPC | falta captura en `docs/evidencias/` |
-| R2 Collector en ambas clouds | ⬜ No iniciado | — | **Cuentas de nube sin crear** |
+| R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
 | R3 Correlación cross-signal | ⬜ No iniciado | — | — |
 | R4 Benchmark de overhead | ⬜ No iniciado | — | Docker con 7 GB (subir a 8–10) |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
@@ -122,6 +122,58 @@ que es lo que corren Cloud Run y Fargate):
 Bajo el límite de 200 MB. Se quitó el extra `[standard]` de uvicorn
 (uvloop/watchfiles/websockets, ~21 MB sin uso).
 
+## Fase 2 — Collector y stack local (R2) 🟨 LOCAL CERRADO, FALTA NUBE
+
+| Tarea | Estado | Nota |
+|---|---|---|
+| T2.1–T2.4 `collector/otel-collector-local.yaml` | ✅ | `memory_limiter → resource → batch`, 3 pipelines, cada bloque comentado con el porqué |
+| T2.5 `docker-compose.yml` de 8 servicios | ✅ | Los 8 healthy en arranque en frío, 35 s |
+| `scripts/smoke-test.sh` | ✅ | 20 exitosas + 3 con `?fail=true` + 3 con `?delay=800` + ruido 409/404 |
+| Despliegue en GCP | ⬜ | Fase 5 |
+| Despliegue en AWS | ⬜ | Fase 6 |
+
+**Validación end-to-end** tras `make local-down && make local-up && make smoke`:
+
+```
+JAEGER      34 trazas · 5 con error · más lenta 810 ms · mediana 8 ms
+PROMETHEUS  checkout_requests_total -> {'success': 23, 'server_error': 3, 'client_error': 2}
+            checkout_duration_ms_count -> 28
+            inventory_reserved_items -> 26
+            exemplars almacenados -> 7 en 7 series
+LOKI        193 líneas en 193 streams · servicios: ['service-a', 'service-b']
+COLLECTOR   fallos de exportación (spans+logs+métricas) -> 0
+            spans rechazados por memory_limiter -> 0
+```
+
+**Correlación métrica → traza demostrada** (adelanta T3.7): un exemplar de
+810,08 ms lleva `trace_id=6578d1c1752814817e193a2c4108c553`; esa traza existe en
+Jaeger con 15 spans, 811 ms y los dos servicios. La cadena completa
+SDK → Collector → Prometheus → exemplar → Jaeger **funciona**.
+
+**Correlación log → traza demostrada** (adelanta T3.6): filtrar Loki por
+`{service_namespace="otel-lab"} | trace_id="6578d1c1..."` devuelve **7 líneas de
+los dos servicios**, incluida `latencia inyectada de 800 ms cart_id=smoke-slow-3`.
+
+### Tres cosas que no salieron como decía el plan
+
+1. **`otelcol_processor_dropped_spans` no existe** en el Collector 0.115.1. El
+   prompt lo pedía para el panel 6. Las métricas equivalentes que sí emite son
+   `otelcol_receiver_refused_spans` (lo que rechaza `memory_limiter`) y
+   `otelcol_exporter_send_failed_spans`. El panel se hará con esas dos.
+2. **El exporter de Prometheus renombraba las métricas.** Por defecto le pega la
+   unidad al nombre: `checkout_duration_ms` salía como
+   `checkout_duration_ms_milliseconds`. Se añadió `add_metric_suffixes: false`
+   para que el nombre sea el mismo en el código y en PromQL.
+3. **El `trace_id` llega a Loki como structured metadata, no en el cuerpo.** El
+   derived field de Grafana con un regex sobre el texto no habría encontrado
+   nada, porque el JSON solo existe en stdout, no en lo que se manda por OTLP.
+   Se cambió a `matcherType: label`, y se dejó el regex como respaldo.
+
+También hubo que **construir una imagen propia del Collector**
+(`collector/Dockerfile`): la oficial es distroless —solo trae `/otelcol-contrib`,
+sin shell ni wget— así que no había con qué responder al healthcheck. Se le
+agrega busybox (~1,5 MB) solo para eso. En la nube se usa la imagen oficial.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Settings → Resources → Memory 8–10 GB → Apply & Restart
@@ -131,11 +183,21 @@ Bajo el límite de 200 MB. Se quitó el extra `[standard]` de uvicorn
 - [ ] `aws configure`
 - [ ] Invitar a Myriam, Juan Francisco y Nicolás como colaboradores del repo
 - [x] T1.1–T1.8: Fase 1 completa y verificada en local
-- [ ] Capturas de R1 en `docs/evidencias/` (esperan a Jaeger, Fase 2)
-- [ ] Fase 2: `collector/otel-collector-local.yaml` y `docker-compose.yml` de 8 servicios
+- [x] T2.1–T2.5: Collector, stack de 8 contenedores y smoke-test
+- [ ] **Capturas de R1 y R2 en `docs/evidencias/`** — ya no hay excusa, Jaeger está arriba
+- [ ] Fase 3: dashboard de 6 paneles, los 4 SLIs en PromQL y las 3 capturas del mismo `trace_id`
 
 ## Bitácora
 
+- **2026-08-17 (D1)** — Fase 2 cerrada en local. `make local-up` deja los **8
+  contenedores healthy en 35 s desde cero**, y los tres pilares llegan a sus
+  backends sin un solo fallo de exportación. Se adelantaron de facto T3.6 y T3.7:
+  la correlación métrica→traza (exemplar de 810 ms que resuelve a una traza real
+  en Jaeger) y log→traza (7 líneas de los dos servicios filtrando Loki por
+  `trace_id`) **ya funcionan**. El riesgo #2 del cronograma, que tenía deadline
+  duro el D5, queda cerrado el D1.
+  Hubo que construir imagen propia del Collector porque la oficial es distroless
+  y no tiene con qué responder a un healthcheck.
 - **2026-08-17 (D1)** — Wiki de ingeniería en `docs/wiki/`: 12 páginas con el
   paso a paso de la Fase 1 explicando qué se hace y por qué. **No se pudo usar el
   Wiki de GitHub**: los wikis no existen en repos privados del plan gratuito
