@@ -21,10 +21,15 @@ x-otel-common: &otel-common
   OTEL_TRACES_EXPORTER: otlp
   OTEL_METRICS_EXPORTER: otlp
   OTEL_LOGS_EXPORTER: otlp
-  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local,service.namespace=otel-lab
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local,service.namespace=otel-lab,service.version=${LAB_VERSION:-0.1.0}
   # Sin esta variable el SDK no engancha el handler que exporta logs por OTLP,
   # y no avisa de nada. Se descubrio a la mala en la Fase 1.
   OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  # Los healthchecks de Compose golpean /health cada 10 s por contenedor. Esto
+  # hace que el SDK NI SIQUIERA CREE el span: mas barato que filtrarlo despues
+  # en el Collector, y evita los sub-spans de ASGI ("http send"/"http receive")
+  # que no llevan http.route y por tanto el filtro del Collector no alcanza.
+  OTEL_PYTHON_EXCLUDED_URLS: "health"
   # Exemplars: enlazan cada punto del histograma con el trace_id que lo produjo.
   OTEL_METRICS_EXEMPLAR_FILTER: trace_based
   # 15s en vez de los 60s por defecto: en un laboratorio no se puede esperar un
@@ -148,6 +153,8 @@ services:
       - "4318:4318"   # OTLP HTTP
       - "8888:8888"   # metricas del propio Collector
       - "8889:8889"   # metricas de las aplicaciones, para Prometheus
+      - "55679:55679" # zpages: UI de diagnostico del pipeline
+      - "1777:1777"   # pprof: perfilado del Collector (Fase 4)
     # Arranca despues de sus destinos: si exportara contra backends que aun no
     # escuchan, los reintentos llenarian el log de errores en cada arranque.
     depends_on:

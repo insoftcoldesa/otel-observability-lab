@@ -189,6 +189,18 @@ agrega busybox (~1,5 MB) solo para eso. En la nube se usa la imagen oficial.
 
 ## Bitácora
 
+- **2026-08-22 (D6)** — Adoptadas las 5 mejoras que salieron de revisar
+  `insoftcoldesa/OTelLabs` (ver `docs/comparativa-OTelLabs.md`), todas verificadas:
+  `filter/health` (los spans de healthcheck pasaron de 12 a **0**),
+  `resourcedetection` (añade `host.name` y `os.type`; en la nube añadirá región),
+  `service.version=0.1.0` en el recurso, `zpages` en :55679 y `pprof` en :1777
+  (los dos responden 200), y campos estructurados en los logs vía `extra={}`.
+  Hallazgo: filtrar solo por `http.route` dejaba 12 sub-spans huérfanos de ASGI
+  (`GET /health http send`) que no llevan ese atributo. Se resolvió en dos capas
+  — `OTEL_PYTHON_EXCLUDED_URLS` para que el SDK ni los cree, y una condición por
+  nombre en el Collector como defensa para la nube.
+  Extra no previsto: los campos de `extra={}` llegan a Loki como **structured
+  metadata**, así que se consultan con `| cart_id="c-100"` sin necesidad de `| json`.
 - **2026-08-17 (D1)** — Fase 2 cerrada en local. `make local-up` deja los **8
   contenedores healthy en 35 s desde cero**, y los tres pilares llegan a sus
   backends sin un solo fallo de exportación. Se adelantaron de facto T3.6 y T3.7:

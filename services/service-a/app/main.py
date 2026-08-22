@@ -63,11 +63,12 @@ def validate_cart(req: CheckoutRequest) -> float:
         skus = [item.sku for item in req.items]
         if len(skus) != len(set(skus)):
             span.set_status(Status(StatusCode.ERROR, "SKU repetido en el carrito"))
-            log.warning("carrito invalido cart_id=%s: SKU repetido", req.cart_id)
+            log.warning("carrito invalido: SKU repetido",
+                        extra={"cart_id": req.cart_id})
             raise HTTPException(status_code=400, detail="SKU repetido en el carrito")
 
-        log.info("carrito valido cart_id=%s items=%s subtotal=%s",
-                 req.cart_id, len(req.items), subtotal)
+        log.info("carrito valido", extra={
+            "cart_id": req.cart_id, "cart_items": len(req.items), "subtotal": subtotal})
         return subtotal
 
 
@@ -84,7 +85,8 @@ def apply_discount(subtotal: float, code: str | None) -> tuple[float, float]:
         span.set_attribute("cart.total", total)
 
         if code and pct == 0:
-            log.warning("codigo de descuento desconocido: %s", normalizado)
+            log.warning("codigo de descuento desconocido",
+                        extra={"discount_code": normalizado})
         return total, pct
 
 
@@ -143,12 +145,14 @@ def checkout(
         reservations = reserve_inventory(req, fail=fail, delay_ms=delay)
     except HTTPException as exc:
         status = "client_error" if exc.status_code < 500 else "server_error"
-        log.error("checkout fallido cart_id=%s http=%s: %s",
-                  req.cart_id, exc.status_code, exc.detail)
+        log.error("checkout fallido", extra={
+            "cart_id": req.cart_id, "http_status": exc.status_code,
+            "detail": exc.detail, "checkout_status": status})
         raise
     else:
         status = "success"
-        log.info("checkout ok cart_id=%s total=%s", req.cart_id, total)
+        log.info("checkout ok", extra={
+            "cart_id": req.cart_id, "total": total, "discount_pct": discount_pct})
         return {
             "cart_id": req.cart_id,
             "items": len(req.items),

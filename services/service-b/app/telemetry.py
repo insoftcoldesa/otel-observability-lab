@@ -31,6 +31,16 @@ inventory_reserved_items = meter.create_up_down_counter(
 # --- Logs JSON correlacionados (T1.6) ---------------------------------------------------------------------------
 
 
+# Atributos que el modulo logging pone siempre en el LogRecord. Todo lo que no
+# este en esta lista vino de un `extra={...}` y por tanto es dato de negocio.
+_CAMPOS_ESTANDAR = frozenset({
+    "args", "asctime", "created", "exc_info", "exc_text", "filename",
+    "funcName", "levelname", "levelno", "lineno", "message", "module",
+    "msecs", "msg", "name", "pathname", "process", "processName",
+    "relativeCreated", "stack_info", "taskName", "thread", "threadName",
+})
+
+
 class JsonFormatter(logging.Formatter):
     """Una linea JSON por registro, con el trace_id/span_id del span activo."""
 
@@ -50,7 +60,17 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False)
+
+        # Campos pasados con logger.info("...", extra={"cart_id": ...}) suben
+        # como claves JSON propias, no enterrados en el texto del mensaje. Eso
+        # los hace consultables en Loki con `| json | cart_id="c-100"` en vez
+        # de obligar a una busqueda de texto. Idea tomada de la revision de
+        # insoftcoldesa/OTelLabs (docs/comparativa-OTelLabs.md).
+        for clave, valor in record.__dict__.items():
+            if clave not in _CAMPOS_ESTANDAR and not clave.startswith("_"):
+                payload[clave] = valor
+
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def setup_logging() -> None:

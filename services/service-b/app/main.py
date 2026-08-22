@@ -55,15 +55,15 @@ def reserve_stock(cur, sku: str, qty: int) -> int:
         row = cur.fetchone()
         if row is None:
             span.set_status(Status(StatusCode.ERROR, "SKU desconocido"))
-            log.warning("SKU desconocido: %s", sku)
+            log.warning("SKU desconocido", extra={"sku": sku})
             raise HTTPException(status_code=404, detail=f"SKU desconocido: {sku}")
 
         stock_before = row[0]
         span.set_attribute("stock.before", stock_before)
         if stock_before < qty:
             span.set_status(Status(StatusCode.ERROR, "stock insuficiente"))
-            log.warning("stock insuficiente sku=%s stock=%s pedido=%s",
-                        sku, stock_before, qty)
+            log.warning("stock insuficiente", extra={
+                "sku": sku, "stock_before": stock_before, "qty": qty})
             raise HTTPException(
                 status_code=409,
                 detail=f"stock insuficiente para {sku}: hay {stock_before}, se piden {qty}",
@@ -78,7 +78,8 @@ def reserve_stock(cur, sku: str, qty: int) -> int:
         span.set_attribute("stock.after", stock_after)
 
         inventory_reserved_items.add(qty, {"sku": sku})
-        log.info("reservado sku=%s qty=%s stock_after=%s", sku, qty, stock_after)
+        log.info("reservado", extra={
+            "sku": sku, "qty": qty, "stock_after": stock_after})
         return stock_after
 
 
@@ -92,7 +93,8 @@ def reserve(
     if delay:
         with tracer.start_as_current_span("inventory.injected_delay") as span:
             span.set_attribute("fault.delay_ms", delay)
-            log.info("latencia inyectada de %s ms cart_id=%s", delay, req.cart_id)
+            log.info("latencia inyectada", extra={
+                "cart_id": req.cart_id, "delay_ms": delay})
             time.sleep(delay / 1000)
 
     reservations = []
@@ -116,10 +118,12 @@ def reserve(
                 span.record_exception(error)
                 span.set_status(Status(StatusCode.ERROR, str(error)))
                 span.set_attribute("fault.injected", True)
-                log.error("falla inyectada cart_id=%s", req.cart_id, exc_info=error)
+                log.error("falla inyectada", exc_info=error,
+                          extra={"cart_id": req.cart_id, "fault": "injected"})
             raise HTTPException(status_code=500, detail=str(error))
 
-    log.info("reserva ok cart_id=%s items=%s", req.cart_id, len(reservations))
+    log.info("reserva ok", extra={
+        "cart_id": req.cart_id, "reserved_items": len(reservations)})
     return {"cart_id": req.cart_id, "reservations": reservations}
 
 

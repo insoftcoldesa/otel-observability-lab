@@ -26,10 +26,11 @@ receivers:
 # ---------------------------------------------------------------------------
 # PROCESSORS — EL ORDEN NO ES NEGOCIABLE
 # ---------------------------------------------------------------------------
-# memory_limiter -> resource -> batch
+# memory_limiter -> resource -> resourcedetection -> filter -> batch
 #
-# Este orden es una recomendacion explicita del proyecto OpenTelemetry, y cada
-# posicion tiene una razon:
+# El principio que fija los extremos es una recomendacion explicita del proyecto
+# OpenTelemetry: memory_limiter SIEMPRE primero, batch SIEMPRE ultimo. Lo de en
+# medio va entre los dos, y cada posicion tiene una razon:
 #
 #   1. memory_limiter VA PRIMERO porque su trabajo es rechazar datos cuando la
 #      memoria aprieta. Si estuviera despues de batch, el Collector ya habria
@@ -42,9 +43,14 @@ receivers:
 #      limitador, y debe hacerlo ANTES de agrupar. Etiquetar despues de batch
 #      significaria recorrer lotes ya formados, mas costoso y mas fragil.
 #
-#   3. batch VA ULTIMO porque agrupar es lo unico que conviene hacer justo antes
-#      de salir por la red. Agrupar antes de filtrar seria trabajo desperdiciado
-#      sobre datos que quiza se van a descartar.
+#   3. resourcedetection VA DESPUES de resource porque enriquece con datos de la
+#      plataforma, y con override: false respeta lo que resource ya puso.
+#
+#   4. filter VA ANTES de batch: descartar lo que no interesa antes de agruparlo
+#      evita gastar CPU y memoria formando lotes que se van a tirar.
+#
+#   5. batch VA ULTIMO porque agrupar es lo unico que conviene hacer justo antes
+#      de salir por la red.
 processors:
   # Frena la ingesta antes de que el proceso se quede sin memoria.
   # limit_mib 400 sobre un contenedor de ~512 MB deja margen para el runtime de
@@ -72,6 +78,36 @@ processors:
       - key: service.namespace
         value: otel-lab
         action: upsert
+
+  # Detecta solo los atributos de la plataforma donde corre: region, zona,
+  # instance.id, tipo de maquina. Adoptado de insoftcoldesa/OTelLabs, y es la
+  # pieza que hace que en las Fases 5 y 6 las trazas de nube traigan contexto
+  # real sin que nadie escriba una variable a mano. En local solo aciertan
+  # `env`, `docker` y `system`; `gcp` y `ecs` fallan rapido y no estorban.
+  # override: false para no pisar lo que ya venga del servicio.
+  resourcedetection:
+    detectors: [env, docker, system]
+    timeout: 5s
+    override: false
+
+  # Saca del pipeline de trazas los health checks de Docker Compose.
+  # Sin esto son ~2.900 spans basura al dia (8 contenedores x cada 10 s) que
+  # ensucian Jaeger y, peor, **falsean el p99 hacia abajo**: son peticiones de
+  # 1 ms que diluyen la cola de la distribucion. Solo afecta a trazas; las
+  # metricas y los logs del health si se conservan.
+  # Es defensa en profundidad: los servicios ya llevan OTEL_PYTHON_EXCLUDED_URLS
+  # para no crearlos, pero en la nube quien golpea /health puede ser un balanceador
+  # o la propia plataforma, y ahi el filtro del Collector es la ultima linea.
+  # La condicion por nombre es necesaria: los sub-spans de ASGI
+  # ("GET /health http send") NO llevan http.route, asi que filtrar solo por
+  # atributo dejaba spans huerfanos en Jaeger. Verificado: quedaban 12.
+  filter/health:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.target"] == "/health"'
+        - 'IsMatch(name, ".*/health.*")'
 
   # Agrupa antes de exportar. Sin batch, cada span seria una llamada de red
   # independiente: mas latencia, mas CPU y mas presion sobre los backends.
@@ -149,11 +185,24 @@ extensions:
   health_check:
     endpoint: 0.0.0.0:13133
 
+  # zpages: UI de diagnostico del pipeline en el navegador
+  # (http://localhost:55679/debug/tracez). Muestra spans en vuelo, latencias por
+  # operacion y errores recientes SIN salir del Collector. Es la forma mas
+  # rapida de distinguir "el backend no recibe" de "el Collector no envia", y da
+  # una captura de evidencia extra para R2.
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+  # pprof: perfilado del propio Collector. Sirve en la Fase 4 para atribuir
+  # consumo de CPU al Collector y no al servicio instrumentado.
+  pprof:
+    endpoint: 0.0.0.0:1777
+
 # ---------------------------------------------------------------------------
 # SERVICE — el cableado
 # ---------------------------------------------------------------------------
 service:
-  extensions: [health_check]
+  extensions: [health_check, zpages, pprof]
 
   # El Collector tambien se observa a si mismo, y esto NO es un lujo: es la
   # unica forma de saber si esta descartando telemetria. Un Collector saturado
@@ -177,15 +226,15 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, resource, resourcedetection, filter/health, batch]
       exporters: [otlp/jaeger]
 
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, resource, resourcedetection, batch]
       exporters: [prometheus]
 
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, resource, resourcedetection, batch]
       exporters: [otlphttp/loki]
