@@ -18,7 +18,11 @@ estimando, se pagina con Word:
         return n
     end tell'
 
-Estado actual: 7 paginas, 1378 palabras.
+Estado actual: 7 paginas.
+
+OJO: el .docx del repositorio es la version editada y guardada desde Word, que
+ademas normaliza el formato interno del fichero. Regenerar con este script
+produce un .docx equivalente en texto pero no identico byte a byte.
 """
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
@@ -99,13 +103,14 @@ p("Implementación de un pipeline de observabilidad con OpenTelemetry: "
   "arquitectura, correlación cross-signal y análisis de overhead",
   negrita=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 p()
-p("Fredy Pulido, Myriam Martínez, Juan Francisco Pérez y Nicolás Torres",
-  align=WD_ALIGN_PARAGRAPH.CENTER)
+for autor in ("Fredy Orlando Pulido Quintero", "Myriam Andrea Martínez Fontecha",
+              "Juan Francisco Javier Pérez Rivero", "Nicolás Felipe Torres Amaya"):
+    p(autor, align=WD_ALIGN_PARAGRAPH.CENTER)
 p("Maestría en Arquitectura de Software", align=WD_ALIGN_PARAGRAPH.CENTER)
 p("MASS – OBAP20264: Observabilidad en Ambientes Productivos",
   align=WD_ALIGN_PARAGRAPH.CENTER)
-p("[Nombre del docente]", align=WD_ALIGN_PARAGRAPH.CENTER)
-p("25 de agosto de 2026", align=WD_ALIGN_PARAGRAPH.CENTER)
+p("Maria Fernanda Ochoa Paipilla", align=WD_ALIGN_PARAGRAPH.CENTER)
+p("24 de agosto de 2026", align=WD_ALIGN_PARAGRAPH.CENTER)
 DOC.add_page_break()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -178,7 +183,7 @@ p("La correlación se verificó sobre una misma petición, identificada por el t
   "referencia ese identificador; Jaeger contiene la traza con 15 spans y 810,29 ms "
   "repartidos entre ambos servicios; y Loki devuelve siete líneas de registro de los "
   "dos servicios al filtrar por ese valor. La coincidencia entre el exemplar y la "
-  "duración real confirma que la cadena opera de extremo a extremo. Ello exige cinco "
+  "duración real confirma que la cadena opera de extremo a extremo. Exige cinco "
   "eslabones correctamente configurados, desde el filtro de exemplars en el SDK hasta "
   "los enlaces entre orígenes de datos en Grafana, y cada uno falla en silencio.")
 
