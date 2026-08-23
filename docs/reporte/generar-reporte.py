@@ -121,20 +121,18 @@ p("Implementación de un pipeline de observabilidad con OpenTelemetry",
 
 h2("Introducción")
 p("La observabilidad no verifica umbrales conocidos, sino que permite responder "
-  "preguntas no anticipadas (Majors et al., 2022). El objetivo de este laboratorio no "
-  "es recolectar telemetría, sino demostrar que las tres señales pueden recorrerse "
-  "entre sí para investigar una petición concreta, y cuantificar el costo de esa "
-  "capacidad. El sistema modela un checkout: el servicio A valida un carrito, aplica "
-  "un descuento y solicita al servicio B la reserva de inventario, que consulta "
-  "PostgreSQL. Se emplearon dos servicios porque el problema relevante del trazado "
-  "distribuido es el salto entre procesos.")
+  "preguntas no anticipadas (Majors et al., 2022). El objetivo de este laboratorio "
+  "no es recolectar telemetría, sino demostrar que las tres señales pueden "
+  "recorrerse entre sí para investigar una petición concreta, y cuantificar el "
+  "costo de esa capacidad. El sistema modela un checkout con dos servicios —el "
+  "problema relevante del trazado distribuido es el salto entre procesos— y una "
+  "base de datos PostgreSQL.")
 
 h2("Arquitectura de la Solución")
 p("La aplicación exporta telemetría por OTLP/gRPC hacia un OpenTelemetry Collector "
-  "que la distribuye a tres backends especializados. Este desacople es la decisión "
+  "que la distribuye a tres backends especializados. Ese desacople es la decisión "
   "arquitectónica central: la aplicación conoce una sola dirección y el destino se "
-  "resuelve en configuración. Sin esa capa intermedia, cambiar de backend obligaría "
-  "a reconstruir y redesplegar todos los servicios.")
+  "resuelve en configuración.")
 
 # Tabla 1
 p("Tabla 1", negrita=True, sangria=False, espacio=True)
@@ -166,32 +164,30 @@ h2("Decisiones de Diseño")
 p("Instrumentación automática y manual. La automática se activa con el comando "
   "opentelemetry-instrument, sin envolver el código: cubre cada petición HTTP, cada "
   "consulta SQL y la propagación de contexto W3C (W3C, 2021). Su límite es que "
-  "desconoce el dominio, pues observa una sentencia UPDATE y no una reserva de "
-  "inventario; por ello se añadieron tres spans de negocio con atributos propios.")
+  "desconoce el dominio —observa una sentencia UPDATE, no una reserva de "
+  "inventario—, por lo que se añadieron tres spans de negocio.")
 p("Orden de los procesadores y cardinalidad. El limitador de memoria va primero "
-  "porque su función es rechazar datos bajo presión: situado tras el agrupamiento, el "
-  "Collector ya habría consumido la memoria que intenta proteger, y uno que termina "
-  "por falta de memoria deja al sistema ciego durante un incidente. El agrupamiento va "
-  "último, justo antes de la salida de red. Por su parte, los identificadores de "
-  "carrito se registran como atributos de span y nunca como etiquetas de métrica, pues "
-  "una etiqueta de cardinalidad alta genera una serie temporal por valor y agota la "
-  "memoria del sistema de métricas.")
+  "porque su función es rechazar datos bajo presión: situado tras el agrupamiento "
+  "ya habría consumido la memoria que intenta proteger, y un Collector que termina "
+  "por falta de memoria deja al sistema ciego durante un incidente. Los "
+  "identificadores de carrito, por su parte, se registran como atributos de span y "
+  "nunca como etiquetas de métrica: una etiqueta de cardinalidad alta genera una "
+  "serie temporal por valor y agota el sistema de métricas.")
 
 h2("Correlación Cross-Signal")
-p("La correlación se verificó sobre una misma petición, identificada por el trazo "
-  "d0d3061140d349621409832fbf158bce. Prometheus almacenó un exemplar de 809 ms que "
-  "referencia ese identificador; Jaeger contiene la traza con 15 spans y 810,29 ms "
-  "repartidos entre ambos servicios; y Loki devuelve siete líneas de registro de los "
-  "dos servicios al filtrar por ese valor. La coincidencia entre el exemplar y la "
-  "duración real confirma que la cadena opera de extremo a extremo. Exige cinco "
-  "eslabones correctamente configurados, desde el filtro de exemplars en el SDK hasta "
-  "los enlaces entre orígenes de datos en Grafana, y cada uno falla en silencio.")
+p("La correlación se verificó sobre una misma petición. Prometheus almacenó un "
+  "exemplar de 809 ms que referencia el identificador de traza; Jaeger contiene esa "
+  "traza con 15 spans y 810,29 ms repartidos entre ambos servicios; y Loki devuelve "
+  "siete líneas de registro de los dos servicios al filtrar por ese valor. La "
+  "coincidencia entre el exemplar y la duración real confirma que la cadena opera de "
+  "extremo a extremo. Exige cinco eslabones correctamente configurados, y cada uno "
+  "falla en silencio.")
 
 # Figura 1
 p("Figura 1", negrita=True, sangria=False, espacio=True)
 p("Traza distribuida con spans automáticos y de negocio en un mismo árbol",
   cursiva=True, sangria=False)
-DOC.add_picture("docs/evidencias/R3-01-traza.png", width=Inches(3.9))
+DOC.add_picture("docs/evidencias/R3-01-traza.png", width=Inches(3.5))
 DOC.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 p("Nota. Los spans checkout.validate_cart e inventory.reserve_stock son manuales; "
   "SELECT y UPDATE los genera la instrumentación automática de psycopg2 y aparecen "
@@ -229,16 +225,16 @@ p("Nota. Media de dos corridas. La desviación entre corridas fue de 5,3 % y 1,7
   "sobre el p95, frente a una diferencia entre escenarios de 28,8 %.",
   sangria=False, size=10, espacio=True, sencillo=True)
 
-p("Los cuatro valores de la Tabla 2 no son hallazgos independientes. La prueba opera "
-  "en lazo cerrado con concurrencia fija, régimen donde rige la ley de Little (Little, "
-  "1961): el tiempo de respuesta equivale al número de usuarios dividido entre el "
-  "rendimiento. Esa relación predice un aumento de latencia del 24,6 % y se midió "
+p("Los cuatro valores de la Tabla 2 no son hallazgos independientes. La prueba "
+  "opera en lazo cerrado con concurrencia fija, régimen donde rige la ley de Little "
+  "(Little, 1961): el tiempo de respuesta equivale al número de usuarios dividido "
+  "entre el rendimiento. Esa relación predice un aumento del 24,6 % y se midió "
   "23,6 %, lo que confirma que el alza de latencia y la caída de rendimiento son el "
-  "mismo fenómeno visto desde dos ángulos.")
-p("El consumo de procesador exigió otro tratamiento. En términos absolutos resultaba "
-  "engañoso, pues el servicio A registró menos uso al estar instrumentado; no es un "
-  "ahorro, sino menos peticiones atendidas, ya que ambos escenarios operan saturados. "
-  "Normalizar el consumo por el rendimiento entrega la magnitud comparable.")
+  "mismo fenómeno.")
+p("El consumo de procesador exigió otro tratamiento. En términos absolutos "
+  "resultaba engañoso: el servicio A registró menos uso al estar instrumentado, "
+  "pero no es un ahorro sino menos peticiones atendidas, ya que ambos escenarios "
+  "operan saturados. Normalizarlo por el rendimiento entrega la magnitud comparable.")
 
 # Tabla 3
 p("Tabla 3", negrita=True, sangria=False, espacio=True)
@@ -268,31 +264,162 @@ p("Nota. Unidad: porcentaje de procesador dividido entre solicitudes por segundo
 
 p("El costo transferible es el 28,5 % de procesador por petición, no el 34 % del "
   "percentil 99: este último depende de que el servicio B operara al 98,8 % de "
-  "procesador. En un sistema con holgura, el mismo incremento de tiempo de servicio "
-  "produce un alza de latencia mucho menor, al no existir una cola que la amplifique.")
+  "procesador. Con holgura, el mismo incremento de tiempo de servicio produce un "
+  "alza de latencia mucho menor, al no existir cola que la amplifique.")
 
-p("La primera ejecución resultó inválida por miles de errores. Prometheus descartó "
-  "la hipótesis de agotamiento de inventario al no registrar error de cliente alguno, "
-  "y los registros revelaron la causa real: el conjunto de conexiones admitía cinco "
-  "frente a los cuarenta hilos con que el servidor atiende funciones síncronas, y "
-  "empleaba una implementación no segura para hilos. Corregido el defecto, la medición "
-  "se repitió. Una prueba de humo secuencial jamás lo habría detectado, lo que respalda "
-  "medir bajo carga y no solo comprobar que los extremos responden.")
+p("La primera ejecución resultó inválida por miles de errores, causados por un "
+  "conjunto de conexiones que admitía cinco frente a los cuarenta hilos con que el "
+  "servidor atiende funciones síncronas. Corregido el defecto, la medición se "
+  "repitió. Una prueba de humo secuencial jamás lo habría detectado, lo que "
+  "respalda medir bajo carga y no solo comprobar que los extremos responden.")
 
 # Figura 2
 p("Figura 2", negrita=True, sangria=False, espacio=True)
 p("Exemplar que enlaza un punto de la métrica de latencia con su traza",
   cursiva=True, sangria=False)
-DOC.add_picture("docs/evidencias/R3-03-exemplar.png", width=Inches(3.6))
+DOC.add_picture("docs/evidencias/R3-03-exemplar.png", width=Inches(3.4))
 DOC.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-p("Nota. El cuadro emergente muestra el identificador de traza asociado al valor de "
-  "809 ms y el enlace directo hacia Jaeger.", sangria=False, size=10, sencillo=True)
+p("Nota. El cuadro emergente muestra el identificador de traza asociado al valor "
+  "de 809 ms y el enlace directo hacia Jaeger.",
+  sangria=False, size=10, sencillo=True)
+
+DOC.add_page_break()
+h2("Despliegue en la Nube")
+
+p("Elección del proveedor.", negrita=True, sangria=False, espacio=True)
+p("El alcance se redujo a un solo proveedor: con las cuentas sin verificar a "
+  "tres días de la entrega, repartir el esfuerzo tenía como resultado más "
+  "probable dejar ambas incompletas. Se eligió Google Cloud Platform por una "
+  "razón económica, pues los niveles gratuitos no difieren en grado sino en "
+  "naturaleza.")
+
+p("Tabla 4", negrita=True, sangria=False, espacio=True)
+p("Comparación de los niveles gratuitos", cursiva=True, sangria=False)
+t4 = DOC.add_table(rows=5, cols=3)
+t4.style = "Table Grid"
+filas4 = [
+    ("Dimensión", "Google Cloud", "Amazon Web Services"),
+    ("Modelo", "Gratuito permanente", "Créditos que caducan a los seis meses"),
+    ("Cómputo", "2 M solicitudes mensuales sin costo", "Sin nivel gratuito: consume crédito por segundo"),
+    ("Inactividad", "Escala a cero: costo nulo", "La tarea factura mientras exista"),
+    ("Almacén de imágenes", "0,5 GB permanentes", "500 MB durante doce meses"),
+]
+for i, fila in enumerate(filas4):
+    for j, celda in enumerate(fila):
+        c = t4.cell(i, j)
+        c.text = celda
+        par = c.paragraphs[0]
+        compacto(par)
+        par.runs[0].font.size = Pt(10)
+        par.runs[0].font.name = "Times New Roman"
+        if i == 0:
+            par.runs[0].bold = True
+p("Nota. El factor decisivo fue la escala a cero: el servicio inactivo no genera "
+  "costo, de modo que olvidar destruir la infraestructura deja de ser un riesgo "
+  "financiero.", sangria=False, size=10, espacio=True, sencillo=True)
+
+p("Portabilidad sin cambios en el código.", negrita=True, sangria=False, espacio=True)
+p("La aplicación se desplegó sin modificar una sola línea. Entre la configuración "
+  "local del Collector y la de la nube, los receptores, los procesadores y las tres "
+  "canalizaciones son idénticos; lo único que cambia son los exportadores.")
+
+p("Tabla 5", negrita=True, sangria=False, espacio=True)
+p("Equivalencia de backends entre el entorno local y la nube", cursiva=True, sangria=False)
+t5 = DOC.add_table(rows=4, cols=3)
+t5.style = "Table Grid"
+filas5 = [
+    ("Señal", "Entorno local", "Google Cloud"),
+    ("Trazas", "Jaeger", "Cloud Trace"),
+    ("Métricas", "Prometheus", "Managed Service for Prometheus"),
+    ("Registros", "Loki", "Cloud Logging"),
+]
+for i, fila in enumerate(filas5):
+    for j, celda in enumerate(fila):
+        c = t5.cell(i, j)
+        c.text = celda
+        par = c.paragraphs[0]
+        compacto(par)
+        par.runs[0].font.size = Pt(10)
+        par.runs[0].font.name = "Times New Roman"
+        if i == 0:
+            par.runs[0].bold = True
+p("Nota. Los backends no se trasladaron a máquinas virtuales, sino que se "
+  "sustituyeron por los servicios gestionados equivalentes, lo que mantiene el "
+  "despliegue dentro del nivel gratuito.",
+  sangria=False, size=10, espacio=True, sencillo=True)
+
+p("Arquitectura del despliegue.", negrita=True, sangria=False, espacio=True)
+p("Cada servicio se ejecuta en Cloud Run con su propio Collector como contenedor "
+  "adjunto. Al compartir el espacio de red de la instancia, la aplicación exporta "
+  "a la dirección local, el Collector no queda expuesto a internet y se evita un "
+  "conector de red privada, que sí tendría costo. El servicio de inventario "
+  "incorpora además PostgreSQL como tercer contenedor adjunto, lo que conserva "
+  "intactos los spans de base de datos: migrar a un motor embebido habría "
+  "cambiado la instrumentación que sustenta el primer criterio. Todo se define en "
+  "Terraform, con la región fijada por una validación que rechaza cualquier otra, "
+  "pues solo una ofrece nivel gratuito.")
+
+p("Un hallazgo del despliegue.", negrita=True, sangria=False, espacio=True)
+p("La aplicación respondía correctamente y sus registros llegaban a Cloud "
+  "Logging, pero Cloud Trace no recibía ninguna traza y ningún componente "
+  "reportaba error. La causa: Cloud Run asigna procesador únicamente mientras se "
+  "atiende una petición, y al enviar la respuesta lo congela, de modo que el hilo "
+  "que exporta los spans en segundo plano nunca llegaba a ejecutarse. Los datos se "
+  "acumulaban en la cola y se perdían en silencio. Un exportador de depuración "
+  "temporal demostró que los spans sí alcanzaban al Collector, lo que descartó al "
+  "SDK; variar el ritmo del tráfico resultó decisivo.")
+
+p("Seis peticiones seguidas entregaron 8 spans de los 42 esperados, mientras "
+  "que esas mismas seis, espaciadas cinco segundos, entregaron las seis trazas "
+  "completas. La corrección consistió en asignar procesador de forma permanente y "
+  "acortar los lotes a un segundo, tanto en el SDK como en el Collector.")
+
+p("El valor de este hallazgo excede al laboratorio. Una arquitectura de "
+  "telemetría que funciona sin fallos en un contenedor de larga vida puede perder "
+  "datos en una plataforma sin servidor por un motivo que no aparece en ningún "
+  "registro. Es exactamente el tipo de diferencia entre entornos que justifica "
+  "desplegar en la nube en lugar de dar por válido lo que funciona en local.")
+
+p("Verificación.", negrita=True, sangria=False, espacio=True)
+p("Los tres pilares se comprobaron sobre una misma petición: Cloud Trace muestra "
+  "la traza con dieciséis spans repartidos entre los dos servicios, Cloud Logging "
+  "devuelve las líneas de ambos al filtrar por ese identificador, y Managed "
+  "Prometheus conserva las métricas con sus etiquetas. Los nombres de las "
+  "métricas son idénticos a los locales, así que las consultas del tablero "
+  "anterior funcionan en ambos entornos sin modificación.")
+
+p("Figura 3", negrita=True, sangria=False, espacio=True)
+p("Traza distribuida en Cloud Trace", cursiva=True, sangria=False)
+DOC.add_picture("docs/evidencias/R5-01-cloudtrace.png", width=Inches(4.2))
+DOC.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+p("Nota. Los spans checkout.validate_cart, inventory.reserve_stock, SELECT y "
+  "UPDATE aparecen igual que en Jaeger, lo que confirma que la instrumentación "
+  "viajó sin cambios.", sangria=False, size=10, sencillo=True)
+
+p("Figura 4", negrita=True, sangria=False, espacio=True)
+p("Registros de esa misma traza en Cloud Logging", cursiva=True, sangria=False)
+DOC.add_picture("docs/evidencias/R5-02-cloudlogging.png", width=Inches(4.0))
+DOC.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+p("Nota. La consulta filtra por el identificador de traza y devuelve líneas de "
+  "los dos servicios. El panel lateral muestra cart_id y trace_id como campos "
+  "indexados.", sangria=False, size=10, sencillo=True)
+
+p("Limitaciones.", negrita=True, sangria=False, espacio=True)
+p("Bajo ráfagas sostenidas la plataforma sigue perdiendo lotes, porque las "
+  "instancias se crean y destruyen con rapidez; capturar evidencia exige espaciar "
+  "el tráfico. En el entorno local, con los mismos servicios y cincuenta usuarios "
+  "concurrentes, la entrega fue completa. Y al desplegarse en un solo proveedor, "
+  "la portabilidad queda demostrada por diseño y no por ejecución.")
 
 h2("Conclusiones y Recomendaciones")
-p("La instrumentación completa costó 28,5 % de procesador por petición y 4,5 MB de "
-  "memoria por servicio, a cambio de poder investigar cualquier petición individual a "
-  "través de las tres señales. El costo de memoria es despreciable y acotado; el de "
-  "procesador justifica muestreo en alto volumen.")
+p("La instrumentación completa costó 28,5 % de procesador por petición y 4,5 MB "
+  "de memoria por servicio, a cambio de poder investigar cualquier petición "
+  "individual a través de las tres señales. El costo de memoria es despreciable; el "
+  "de procesador justifica muestreo en alto volumen.")
+p("El despliegue se realizó en un solo proveedor, de modo que no se demostró la "
+  "portabilidad ejecutándola en dos nubes distintas. El argumento se sostiene por "
+  "diseño: la aplicación no conoce su destino y la migración se resuelve en la "
+  "configuración del Collector, no en el código.")
 p("La distribución del sobrecosto orienta esa estrategia en sentido contrario al "
   "habitual: como dos tercios se consumen dentro de la aplicación, el muestreo en el "
   "Collector solo reduciría el tercio restante, pues el gasto ya ocurrió antes de que "

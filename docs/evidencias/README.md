@@ -42,11 +42,41 @@ El tooltip además deja ver de paso tres cosas que valen: `service_version=0.1.0
 `host_name=docker-desktop` y `os_type=linux` — los atributos que añadieron
 `service.version` y el processor `resourcedetection`.
 
+## R2 · Despliegue en GCP
+
+Capturadas el 23 de agosto. Las dos primeras son de la **misma petición**,
+`trace_id` `13afd41d211745598fa2719fc09dbd54`.
+
+| Archivo | Herramienta | Qué demuestra |
+|---|---|---|
+| `R5-01-cloudtrace.png` | Cloud Trace | Traza distribuida de **16 spans** y 58,9 ms, con la columna de servicio mostrando `service-a` y `service-b`. Dentro: `checkout.validate_cart`, `checkout.apply_discount`, `inventory.reserve_stock` y los `SELECT`/`UPDATE` colgando de este último |
+| `R5-02-cloudlogging.png` | Cloud Logging | La consulta por `trace_id` devuelve **14 resultados** de los dos servicios. El panel lateral lista `trace_id`, `cart_id` y `service.name` como **campos indexados**, no como texto |
+| `R5-03-metricas.png` | Managed Prometheus | PromQL `sum by (status) (checkout_requests_total)` con `success` y `server_error` separados en la leyenda |
+
+### Por qué estas tres cierran R2
+
+`R5-01` es la prueba de que **la instrumentación viajó sin cambios**: los mismos
+spans de negocio y los mismos spans SQL de psycopg2 que en Jaeger. Eso solo fue
+posible porque PostgreSQL se desplegó como contenedor sidecar en vez de migrar a
+SQLite, decisión tomada precisamente para no perder esa evidencia.
+
+`R5-02` demuestra que la **correlación cross-signal también funciona en la nube**:
+el mismo identificador que en `R5-01` recupera los registros de ambos servicios.
+
+`R5-03` confirma que las métricas conservan sus etiquetas de negocio. El nombre
+`checkout_requests_total` es idéntico al del entorno local — resultado de fijar
+`add_metric_suffixes: false`, para que las consultas del dashboard sirvan en los
+dos entornos sin tocarlas.
+
 ## Cómo reproducirlas
 
 ```bash
+# entorno local
 make local-up
-make traces      # genera tráfico y entrega los trace_id ya elegidos
+make traces          # genera tráfico y entrega los trace_id ya elegidos
+
+# GCP
+make gcp-traces      # ídem, con los enlaces de la consola ya armados
 ```
 
 Y luego el guion de seis pasos: [`GUION-CAPTURAS.md`](GUION-CAPTURAS.md).
