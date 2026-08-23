@@ -76,6 +76,13 @@ services:
       COLLECTOR_OTLP_ENABLED: "true"
       METRICS_STORAGE_TYPE: prometheus
       SPAN_STORAGE_TYPE: memory
+      # Cota al almacenamiento en RAM. Sin esto Jaeger crece sin freno: en una
+      # prueba de 50 s bajo carga llego a 802 MB, y una corrida del benchmark
+      # dura 420 s. Con 7,7 GB asignados a Docker, la Fase 4 moriria por OOM
+      # a mitad de camino y ademas la presion de memoria distorsionaria las
+      # mediciones de los servicios, que es justo lo que se quiere medir.
+      # 10 000 trazas son de sobra para navegar y capturar evidencia.
+      MEMORY_MAX_TRACES: "10000"
     ports:
       - "16686:16686"   # UI
     healthcheck:

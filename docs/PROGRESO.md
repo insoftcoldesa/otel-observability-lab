@@ -9,7 +9,7 @@
 | R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
-| R4 Benchmark de overhead | ⬜ No iniciado | fuente de CPU y memoria ya resuelta con `docker_stats` | Docker con 7 GB (subir a 8–10) |
+| R4 Benchmark de overhead | 🟨 Tooling listo y validado | k6 + orquestador + analizador; falta ejecutar `make bench` (~50 min) | — |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
@@ -220,6 +220,44 @@ dashboard reaccione es la prueba de que mide de verdad.
    ya se había detectado. El panel 6 usa `otelcol_receiver_refused_spans` y
    `otelcol_exporter_send_failed_spans`, que cubren lo mismo.
 
+## Fase 4 — Benchmark de overhead (R4) 🟨 TOOLING LISTO, FALTA EJECUTAR
+
+| Entregable | Estado | Nota |
+|---|---|---|
+| `benchmark/load-test.js` | ✅ | Rampa 0→50 VU/60 s, meseta 300 s, bajada 60 s; 90 % éxito / 10 % `?fail=true`; thresholds declarados |
+| `benchmark/run-benchmark.sh` | ✅ | 2 escenarios × 3 corridas, warm-up descartado, `docker stats` cada 5 s a CSV |
+| `benchmark/analyze.py` | ✅ | Tablas de latencia, overhead, CPU/RSS y desviación entre corridas |
+| `benchmark/results/overhead-analysis.md` | 🟨 | Metodología escrita; resultados en PENDIENTE hasta ejecutar |
+| Ejecución de las 6 corridas | ⬜ | `make bench`, ~50 min |
+
+**El arnés está validado de punta a punta** con una corrida corta desechable
+(2 escenarios × 1 corrida × 5 VU): produjo JSON y CSV correctos, el analizador
+generó todas las tablas, y `OTEL_SDK_DISABLED=true` se confirmó dentro del
+contenedor. Esos datos se borraron: no son mediciones.
+
+### Tres problemas detectados antes de ejecutar
+
+1. **El stock se agotaba.** `SKU-001` tenía 82 unidades; 7 minutos a 50 VU son
+   miles de peticiones. A los pocos segundos todo habría respondido 409 y el
+   benchmark habría medido la ruta de error. El orquestador ahora resetea el
+   inventario antes de cada corrida.
+2. **Jaeger llenaba la memoria — era un bloqueante.** En la validación de 50 s
+   llegó a **802 MB** de RSS. Una corrida dura 420 s y son seis: con 7,7 GB en
+   Docker, el benchmark habría muerto por OOM a mitad de camino, distorsionando
+   antes las mediciones. Acotado con `MEMORY_MAX_TRACES=10000`.
+3. **El arnés se colgaba.** El subshell que muestrea `docker stats` heredaba el
+   pipe de la sustitución de comandos que captura su PID, así que `$(...)` nunca
+   retornaba. Corregido con `>/dev/null 2>&1 &`.
+
+### Advertencia sobre la lectura de los resultados
+
+Con **solo 5 VU** los servicios ya alcanzaban picos de **144 % de CPU**. Con 50 VU
+estarán saturados, y en un sistema saturado el delta de CPU puede salir
+**negativo** — no es un ahorro, es que el escenario instrumentado procesa menos
+peticiones porque va más lento. Si eso ocurre, la magnitud real del overhead
+está en la **caída de throughput**, no en la CPU, y hay que reportar las dos
+juntas. Para medir en la región lineal: `VUS=10 make bench`.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Settings → Resources → Memory 8–10 GB → Apply & Restart
@@ -235,6 +273,11 @@ dashboard reaccione es la prueba de que mide de verdad.
 
 ## Bitácora
 
+- **2026-08-22 (D6)** — Tooling de la Fase 4 listo y validado; falta correr las
+  6 corridas (~50 min). Tres problemas cazados antes de ejecutar: el stock se
+  agotaba y habría medido la ruta de error, Jaeger llenaba la memoria y habría
+  matado el benchmark por OOM, y el propio arnés se colgaba por un subshell que
+  heredaba el pipe de una sustitución de comandos.
 - **2026-08-22 (D6)** — **R1 y R3 cerrados con evidencia.** Las 8 capturas están
   en `docs/evidencias/` con índice. Las tres de R3 comparten `trace_id`
   `d0d3061140d349621409832fbf158bce`, y una de ellas (`R3-02-log-salto-a-jaeger`)

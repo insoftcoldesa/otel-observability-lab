@@ -1,0 +1,25 @@
+# Override para el ESCENARIO A del benchmark.
+#
+#   docker compose -f docker-compose.yml -f benchmark/docker-compose.baseline.yml up -d
+#
+# OTEL_SDK_DISABLED=true deja el SDK en modo no-op: no se crean spans, no se
+# agregan metricas y no sale nada por OTLP.
+#
+# QUE MIDE Y QUE NO. Los servicios siguen arrancando con `opentelemetry-instrument`,
+# asi que las librerias siguen envueltas: cada request sigue pasando por el
+# wrapper de FastAPI y cada query por el de psycopg2, solo que esos wrappers
+# ahora no hacen trabajo util. Es decir, este escenario mide el costo de la
+# TELEMETRIA ACTIVA —crear spans, atributos, agregar metricas, serializar y
+# exportar— pero NO el costo de tener las librerias parcheadas.
+#
+# En consecuencia el overhead que reporte el analisis es una COTA INFERIOR del
+# costo total de instrumentar. Es la comparacion que pide la rubrica ("con vs.
+# sin instrumentacion") y la mas util en la practica, porque en produccion la
+# decision real es "SDK activo o no", no "reescribo la app sin instrumentar".
+services:
+  service-a:
+    environment:
+      OTEL_SDK_DISABLED: "true"
+  service-b:
+    environment:
+      OTEL_SDK_DISABLED: "true"
