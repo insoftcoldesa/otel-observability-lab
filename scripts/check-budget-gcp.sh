@@ -40,9 +40,13 @@ ID_CUENTA="${CUENTA_FACT##*/}"
 RESP="$(curl -s -H "Authorization: Bearer ${TOKEN}" -H "x-goog-user-project: ${PROYECTO}" \
   "https://billingbudgets.googleapis.com/v1/billingAccounts/${ID_CUENTA}/budgets")"
 
-printf '%s' "$RESP" | LIMITE="$LIMITE_USD" python3 - <<'PY' || exit 1
+# El JSON viaja por variable de entorno y NO por stdin: `python3 - <<PY` usa
+# stdin para leer el propio programa, asi que un pipe hacia python se pierde.
+# Ese bug hacia que este guardian fallara con JSONDecodeError aunque el API
+# respondiera bien.
+RESPUESTA="$RESP" LIMITE="$LIMITE_USD" python3 - <<'PY' || exit 1
 import json, os, sys
-d = json.load(sys.stdin)
+d = json.loads(os.environ["RESPUESTA"])
 if "error" in d:
     msg = d["error"].get("message", "")
     print(f"!! no se pudo consultar el presupuesto: {msg[:200]}", file=sys.stderr)
@@ -59,7 +63,12 @@ TASAS = {"USD": 1.0, "COP": 1 / 4100, "EUR": 1.09, "MXN": 1 / 17}
 limite = float(os.environ["LIMITE"])
 ok = False
 for b in presupuestos:
-    monto = b.get("amount", {}).get("specifiedAmount", {})
+    amount = b.get("amount", {})
+    if "lastPeriodAmount" in amount:
+        print(f"   presupuesto '{b.get('displayName','(sin nombre)')}': "
+              "importe = gasto del periodo anterior (no es un limite fijo)")
+        continue
+    monto = amount.get("specifiedAmount", {})
     unidades = float(monto.get("units", 0))
     moneda = monto.get("currencyCode", "USD")
     usd = unidades * TASAS.get(moneda, 1.0)
@@ -78,3 +87,7 @@ if not ok:
 PY
 
 verde "==> Todo en orden. Se puede desplegar."
+echo
+rojo "   RECORDATORIO: un presupuesto de GCP NO limita el gasto, solo avisa."
+rojo "   La proteccion real de este laboratorio es el diseno: escala a cero,"
+rojo "   techo de 2 instancias y region fijada a us-central1."
