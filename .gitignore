@@ -27,6 +27,10 @@ service-account*.json
 benchmark/results/raw/*.json
 benchmark/results/raw/*.csv
 !benchmark/results/raw/.gitkeep
+# El registro del entorno SI se versiona: el reporte tiene que declarar la
+# maquina en la que se midio, y es el unico archivo de raw/ que es evidencia
+# en si mismo, no dato crudo.
+!benchmark/results/raw/*-entorno.json
 
 # Docker / SO
 .DS_Store
