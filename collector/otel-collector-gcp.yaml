@@ -62,9 +62,12 @@ processors:
         - 'attributes["http.target"] == "/health"'
         - 'IsMatch(name, ".*/health.*")'
 
+  # 1 s, no los 5 s de local. En Cloud Run la instancia puede quedarse sin CPU
+  # o desaparecer poco despues de responder: cuanto mas corto el lote, menos
+  # telemetria queda atrapada en memoria sin exportar.
   batch:
-    timeout: 5s
-    send_batch_size: 1024
+    timeout: 1s
+    send_batch_size: 512
 
 exporters:
   # TRAZAS Y LOGS -> Cloud Trace y Cloud Logging.
@@ -81,8 +84,16 @@ exporters:
   # Se elige este y no `googlecloud` para metricas porque conserva el modelo de
   # datos de Prometheus: las mismas consultas PromQL del dashboard de la Fase 3
   # siguen sirviendo, incluidos los exemplars.
+  # add_metric_suffixes: false por la misma razon que en la config local. Sin
+  # esta linea el exporter publica `checkout_duration_ms_milliseconds_bucket`,
+  # pegando la unidad a un nombre que ya la lleva. Verificado en el despliegue:
+  # asi salia. Con ella el nombre es identico en local y en la nube, de modo que
+  # las consultas PromQL del dashboard de la Fase 3 sirven en los dos sitios sin
+  # cambiar nada.
   googlemanagedprometheus:
     project: ${env:GCP_PROJECT_ID}
+    metric:
+      add_metric_suffixes: false
 
 extensions:
   # Cloud Run necesita saber si el sidecar esta listo antes de enrutar trafico.

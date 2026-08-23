@@ -73,8 +73,11 @@ locals {
     OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED = "true"
     OTEL_METRICS_EXEMPLAR_FILTER                     = "trace_based"
     OTEL_METRIC_EXPORT_INTERVAL                      = "15000"
-    OTEL_PYTHON_EXCLUDED_URLS                        = "health"
-    OTEL_RESOURCE_ATTRIBUTES                         = "deployment.environment=gcp,service.namespace=otel-lab,service.version=0.1.0"
+    # 1 s en vez de los 5 s por defecto: cuanto antes salga el lote, menos
+    # depende de que la instancia siga viva y con CPU.
+    OTEL_BSP_SCHEDULE_DELAY   = "1000"
+    OTEL_PYTHON_EXCLUDED_URLS = "health"
+    OTEL_RESOURCE_ATTRIBUTES  = "deployment.environment=gcp,service.namespace=otel-lab,service.version=0.1.0"
   }
 }
 
@@ -101,6 +104,9 @@ resource "google_cloud_run_v2_service" "service_b" {
       image      = "${local.registro}/service-b:${var.image_tag}"
       depends_on = ["postgres", "collector"]
 
+      # Cloud Run inyecta la variable PORT automaticamente con este valor y
+      # PROHIBE declararla a mano. El CMD de la imagen ya la lee, asi que el
+      # contenedor escucha donde debe sin configuracion extra.
       ports {
         container_port = 8001
       }
@@ -115,10 +121,6 @@ resource "google_cloud_run_v2_service" "service_b" {
       env {
         name  = "OTEL_SERVICE_NAME"
         value = "service-b"
-      }
-      env {
-        name  = "PORT"
-        value = "8001"
       }
       env {
         name  = "POSTGRES_HOST"
@@ -146,6 +148,12 @@ resource "google_cloud_run_v2_service" "service_b" {
           cpu    = "1"
           memory = "512Mi"
         }
+        # cpu_idle = false: CPU SIEMPRE asignada, no solo durante la peticion.
+        # Sin esto Cloud Run congela la CPU al responder, y el hilo del
+        # BatchSpanProcessor —que exporta unos segundos despues— nunca
+        # llega a ejecutarse. Los spans se encolan y se pierden en silencio.
+        # Es el fallo mas comun al llevar OpenTelemetry a Cloud Run.
+        cpu_idle = false
       }
     }
 
@@ -191,6 +199,12 @@ resource "google_cloud_run_v2_service" "service_b" {
           cpu    = "1"
           memory = "512Mi"
         }
+        # cpu_idle = false: CPU SIEMPRE asignada, no solo durante la peticion.
+        # Sin esto Cloud Run congela la CPU al responder, y el hilo del
+        # BatchSpanProcessor —que exporta unos segundos despues— nunca
+        # llega a ejecutarse. Los spans se encolan y se pierden en silencio.
+        # Es el fallo mas comun al llevar OpenTelemetry a Cloud Run.
+        cpu_idle = false
       }
     }
 
@@ -217,6 +231,12 @@ resource "google_cloud_run_v2_service" "service_b" {
           cpu    = "1"
           memory = "256Mi"
         }
+        # cpu_idle = false: CPU SIEMPRE asignada, no solo durante la peticion.
+        # Sin esto Cloud Run congela la CPU al responder, y el hilo del
+        # BatchSpanProcessor —que exporta unos segundos despues— nunca
+        # llega a ejecutarse. Los spans se encolan y se pierden en silencio.
+        # Es el fallo mas comun al llevar OpenTelemetry a Cloud Run.
+        cpu_idle = false
       }
     }
 
@@ -256,6 +276,7 @@ resource "google_cloud_run_v2_service" "service_a" {
       image      = "${local.registro}/service-a:${var.image_tag}"
       depends_on = ["collector"]
 
+      # Igual que en service-b: PORT lo pone Cloud Run, no nosotros.
       ports {
         container_port = 8000
       }
@@ -271,10 +292,6 @@ resource "google_cloud_run_v2_service" "service_a" {
         name  = "OTEL_SERVICE_NAME"
         value = "service-a"
       }
-      env {
-        name  = "PORT"
-        value = "8000"
-      }
       # La URL de service-b la resuelve Terraform: no hay endpoints escritos a
       # mano en ninguna parte.
       env {
@@ -287,6 +304,12 @@ resource "google_cloud_run_v2_service" "service_a" {
           cpu    = "1"
           memory = "512Mi"
         }
+        # cpu_idle = false: CPU SIEMPRE asignada, no solo durante la peticion.
+        # Sin esto Cloud Run congela la CPU al responder, y el hilo del
+        # BatchSpanProcessor —que exporta unos segundos despues— nunca
+        # llega a ejecutarse. Los spans se encolan y se pierden en silencio.
+        # Es el fallo mas comun al llevar OpenTelemetry a Cloud Run.
+        cpu_idle = false
       }
     }
 
@@ -312,6 +335,12 @@ resource "google_cloud_run_v2_service" "service_a" {
           cpu    = "1"
           memory = "256Mi"
         }
+        # cpu_idle = false: CPU SIEMPRE asignada, no solo durante la peticion.
+        # Sin esto Cloud Run congela la CPU al responder, y el hilo del
+        # BatchSpanProcessor —que exporta unos segundos despues— nunca
+        # llega a ejecutarse. Los spans se encolan y se pierden en silencio.
+        # Es el fallo mas comun al llevar OpenTelemetry a Cloud Run.
+        cpu_idle = false
       }
     }
   }

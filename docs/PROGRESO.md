@@ -7,10 +7,10 @@
 | Criterio | Estado | Evidencia | Bloqueo |
 |---|---|---|---|
 | R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
-| R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
+| R2 Collector en cloud | ✅ **Local + GCP** | 8 contenedores healthy en local · Cloud Run con Collector sidecar, traza de **16 spans** en Cloud Trace | alcance reducido a 1 nube (ADR-002) |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
 | R4 Benchmark de overhead | ✅ **Completo** | 6/6 corridas válidas; `benchmark/results/overhead-analysis.md` con las 3 dimensiones | — |
-| R5 IaC y calidad del repo | 🟨 En curso | repo organizado, wiki de 20 págs, **reporte APA 7 de 7 págs** | **Terraform pendiente — cuentas de nube** |
+| R5 IaC y calidad del repo | 🟨 Casi | Terraform de GCP **aplicado**, 3 ADRs, wiki, reporte APA 7 | falta reflejar la nube en el reporte |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
 
@@ -343,6 +343,58 @@ benchmark se edita y se regenera, en vez de mantener un .docx a mano.
 **Pendiente:** el nombre del docente en la portada está como
 `[Nombre del docente]` — no aparece en ningún sitio del repositorio.
 
+## Fase 5 — Despliegue en GCP (R2) ✅ DESPLEGADO Y VERIFICADO
+
+Proyecto `otel-observability-lab-506406`, región `us-central1`.
+
+| Recurso | Estado |
+|---|---|
+| 5 APIs + Artifact Registry | ✅ |
+| Cuenta de servicio con 3 roles de telemetría | ✅ |
+| `service-a` en Cloud Run + Collector sidecar | ✅ |
+| `service-b` en Cloud Run + PostgreSQL sidecar + Collector sidecar | ✅ |
+| Imágenes en Artifact Registry (4, ~310 MB de 500 gratuitos) | ✅ |
+
+**Los tres pilares verificados en la nube:**
+
+```
+CLOUD TRACE    traza 02017954266938681f6394afbbafe1b9 con 16 spans:
+                 POST /checkout · checkout.validate_cart · checkout.apply_discount
+                 POST · POST /inventory/reserve · inventory.reserve_stock
+                 SELECT · UPDATE          ← psycopg2 intacto gracias al sidecar
+CLOUD LOGGING  6 líneas de ese mismo trace_id, de los dos servicios,
+               con los campos estructurados (cart_id, sku, stock_after)
+MANAGED PROM.  checkout_requests_total, checkout_duration_ms_bucket,
+               inventory_reserved_items
+```
+
+**La correlación cross-signal también funciona en GCP**: mismo `trace_id` en
+Cloud Trace y en Cloud Logging.
+
+### Tres problemas resueltos durante el despliegue
+
+1. **`PORT` es una variable reservada** en Cloud Run y no se puede declarar. El
+   primer `apply` falló. Se quitó: Cloud Run la inyecta y el `CMD` ya la lee.
+2. **`IAM_PERMISSION_DENIED` en el primer arranque.** Era propagación: los roles
+   se concedieron segundos antes de que el servicio arrancara. Se resolvió solo.
+3. **Cloud Trace no recibía nada, sin ningún error.** El más difícil. Cloud Run
+   congela la CPU al responder, así que el hilo del `BatchSpanProcessor` —que
+   exporta segundos después— nunca llegaba a ejecutarse. Documentado en
+   **[ADR-003](adr/ADR-003-cpu-siempre-asignada-en-cloud-run.md)**. Se corrigió
+   con `cpu_idle = false` y acortando los lotes. Prueba: 6 de 6 trazas con
+   tráfico espaciado, frente a 8 spans de 42 con ráfagas.
+
+También se replicó en la nube el arreglo de `add_metric_suffixes`: Managed
+Prometheus publicaba `checkout_duration_ms_milliseconds_bucket`. Con la opción
+puesta, el nombre es idéntico en local y en GCP, así que **las consultas PromQL
+del dashboard de la Fase 3 sirven en los dos entornos sin cambios**.
+
+### Limitación conocida
+
+Bajo ráfagas sin pausa se siguen perdiendo lotes, porque las instancias se crean
+y destruyen. Para capturar evidencia hay que espaciar el tráfico. En local, con
+los mismos servicios y 50 usuarios concurrentes, la entrega fue del 100 %.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Memory: `docker info` sigue reportando **7,65 GiB**. Si se cambió el ajuste, falta *Apply & Restart* — el benchmark declara el valor medido, no el configurado
@@ -358,6 +410,12 @@ benchmark se edita y se regenera, en vez de mantener un .docx a mano.
 
 ## Bitácora
 
+- **2026-08-23 (D7)** — **GCP desplegado y verificado.** Cloud Run con Collector
+  sidecar y PostgreSQL sidecar; traza de 16 spans en Cloud Trace con los spans de
+  negocio y los SELECT/UPDATE de psycopg2 intactos, y el mismo `trace_id` en
+  Cloud Logging. El problema serio fue que Cloud Run congela la CPU al responder
+  y el exportador en segundo plano nunca corría: telemetría perdida sin un solo
+  mensaje de error. ADR-003.
 - **2026-08-23 (D7)** — Reporte técnico APA 7 generado: 7 páginas, verificadas
   paginando con Word. Falta solo el nombre del docente en la portada.
 - **2026-08-23 (D7)** — **R4 cerrado.** Segunda ejecución del benchmark válida:
