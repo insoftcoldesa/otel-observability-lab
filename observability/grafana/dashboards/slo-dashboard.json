@@ -22,7 +22,7 @@
       "id": 1,
       "type": "gauge",
       "title": "SLI-1 · Disponibilidad",
-      "description": "Proporción de checkouts que terminan bien. SLO del laboratorio: 99 %. Excluye los 4xx: un carrito sin stock es una respuesta correcta del sistema, no una caída.",
+      "description": "Proporción de checkouts que terminan bien. SLO del laboratorio: 99 %. Excluye los 4xx: un carrito sin stock es una respuesta correcta del sistema, no una caída. Si no hay peticiones en la ventana de 5 min muestra 'sin tráfico', no 0 %: la ausencia de datos no es una caída.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -40,7 +40,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(checkout_requests_total{status=\"success\"}[5m])) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.0001)",
+          "expr": "(sum(rate(checkout_requests_total{status=\"success\"}[5m])) or vector(0))\n  / (sum(rate(checkout_requests_total[5m])) > 0)",
           "legendFormat": "disponibilidad",
           "range": true,
           "refId": "A"
@@ -68,7 +68,8 @@
                 "value": 0.99
               }
             ]
-          }
+          },
+          "noValue": "sin tráfico"
         },
         "overrides": []
       },
@@ -104,7 +105,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(checkout_requests_total{status=\"server_error\"}[5m])) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.0001)",
+          "expr": "(sum(rate(checkout_requests_total{status=\"server_error\"}[5m])) or vector(0))\n  / (sum(rate(checkout_requests_total[5m])) > 0)",
           "legendFormat": "error 5xx",
           "range": true,
           "refId": "A"
@@ -137,7 +138,8 @@
                 "value": 0.01
               }
             ]
-          }
+          },
+          "noValue": "sin tráfico"
         },
         "overrides": []
       },

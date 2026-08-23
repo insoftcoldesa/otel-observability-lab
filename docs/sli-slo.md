@@ -14,8 +14,8 @@ de memoria: `make local-up && make smoke` y luego http://localhost:9090.
 Proporción de checkouts que terminan bien.
 
 ```promql
-sum(rate(checkout_requests_total{status="success"}[5m]))
-  / clamp_min(sum(rate(checkout_requests_total[5m])), 0.0001)
+(sum(rate(checkout_requests_total{status="success"}[5m])) or vector(0))
+  / (sum(rate(checkout_requests_total[5m])) > 0)
 ```
 
 **SLO: 99 %.**
@@ -27,9 +27,20 @@ Dos decisiones que hay que poder defender:
   funcionó exactamente como debía. Contarlos como indisponibilidad castigaría al
   servicio por hacer bien su trabajo. Por eso solo `status="success"` cuenta como
   éxito, y el SLI-3 mide aparte lo que sí es culpa nuestra.
-- **`clamp_min` en el denominador.** Sin él, cuando no hay tráfico el divisor es
-  cero y el panel muestra `NaN` — que en un gauge se ve como una caída total.
-  `clamp_min` lo convierte en un valor estable.
+- **`or vector(0)` en el numerador y `> 0` en el denominador.** Esto distingue
+  dos situaciones que se ven igual pero no lo son:
+  - **No hay tráfico.** El filtro `> 0` descarta el denominador en cero, la
+    división queda vacía y el panel muestra *"sin tráfico"*. Correcto: nadie intentó comprar, así que no
+    hay disponibilidad que medir.
+  - **Hay tráfico y todo falla.** El numerador estaría vacío (no existe la serie
+    `status="success"`), y sin el `or vector(0)` el panel también diría "sin
+    tráfico" — ocultando una caída total. Con él dice **0 %**, que es la verdad.
+
+  > La primera versión usaba `clamp_min(..., 0.0001)`. Era un error: convertía
+  > "no hay tráfico" en **0 % en rojo**, o sea una caída inventada. Se detectó
+  > mirando la captura del dashboard. El intento intermedio —dividir sin filtro—
+  > daba `NaN`, que Grafana puede pintar literalmente como *NaN*; el `> 0` es lo
+  > que produce un vector vacío de verdad.
 
 ## SLI-2 · Latencia
 
@@ -58,8 +69,8 @@ histogram_quantile(0.99, sum by (le) (rate(checkout_duration_ms_bucket[5m])))
 Fracción de checkouts que fallan por culpa nuestra.
 
 ```promql
-sum(rate(checkout_requests_total{status="server_error"}[5m]))
-  / clamp_min(sum(rate(checkout_requests_total[5m])), 0.0001)
+(sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0))
+  / (sum(rate(checkout_requests_total[5m])) > 0)
 ```
 
 **SLO: < 1 %.** Es el complemento del SLI-1 sobre el mismo criterio: solo

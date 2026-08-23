@@ -6,9 +6,9 @@
 
 | Criterio | Estado | Evidencia | Bloqueo |
 |---|---|---|---|
-| R1 Instrumentación OTel SDK | 🟨 Código completo | T1.1–T1.8 verificados en local; los 3 pilares llegan por OTLP/gRPC | falta captura en `docs/evidencias/` |
+| R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
-| R3 Correlación cross-signal | 🟨 Mecanismo completo | métrica→traza y log→traza verificadas sobre un mismo `trace_id`; dashboard de 6 paneles | faltan las 6 capturas PNG |
+| R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
 | R4 Benchmark de overhead | ⬜ No iniciado | fuente de CPU y memoria ya resuelta con `docker_stats` | Docker con 7 GB (subir a 8–10) |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
 
@@ -183,7 +183,7 @@ agrega busybox (~1,5 MB) solo para eso. En la nube se usa la imagen oficial.
 | T3.5 Dashboard de 6 paneles | ✅ | `observability/grafana/dashboards/slo-dashboard.json`, aprovisionado solo |
 | T3.6 Traza ↔ logs | ✅ | Derived field por `matcherType: label`; 7 líneas de los dos servicios por `trace_id` |
 | T3.7 Métricas ↔ trazas | ✅ | **Exemplars de punta a punta. No hizo falta plan B** |
-| T3.8 Las 3 capturas | ⬜ | Guion listo en [`docs/evidencias/GUION-CAPTURAS.md`](evidencias/GUION-CAPTURAS.md) + `make traces` |
+| T3.8 Las 3 capturas | ✅ | 8 capturas, índice en [`docs/evidencias/README.md`](evidencias/README.md). Las de R3 comparten `trace_id` `d0d3061140d349621409832fbf158bce` |
 
 **T3.7 verificado con la expresión exacta del panel**, no solo con la métrica cruda:
 
@@ -230,11 +230,19 @@ dashboard reaccione es la prueba de que mide de verdad.
 - [ ] Invitar a Myriam, Juan Francisco y Nicolás como colaboradores del repo
 - [x] T1.1–T1.8: Fase 1 completa y verificada en local
 - [x] T2.1–T2.5: Collector, stack de 8 contenedores y smoke-test
-- [ ] **Capturas de R1 y R2 en `docs/evidencias/`** — ya no hay excusa, Jaeger está arriba
+- [x] Capturas de R1 y R3 en `docs/evidencias/` — 8 archivos, verificadas una por una
 - [ ] Fase 3: dashboard de 6 paneles, los 4 SLIs en PromQL y las 3 capturas del mismo `trace_id`
 
 ## Bitácora
 
+- **2026-08-22 (D6)** — **R1 y R3 cerrados con evidencia.** Las 8 capturas están
+  en `docs/evidencias/` con índice. Las tres de R3 comparten `trace_id`
+  `d0d3061140d349621409832fbf158bce`, y una de ellas (`R3-02-log-salto-a-jaeger`)
+  muestra el salto log→traza ya ejecutado en vista partida.
+  Revisar las capturas destapó un defecto propio: el gauge de disponibilidad
+  pintaba **0,000 % en rojo cuando simplemente no había tráfico**, por usar
+  `clamp_min` en el denominador. Corregido con `(… > 0)`, que deja el panel en
+  "sin tráfico". Verificado sobre el caso exacto que lo producía.
 - **2026-08-22 (D6)** — Fase 3 cerrada salvo capturas. **T3.7 no necesitó plan B**:
   los exemplars funcionan de punta a punta y se verificaron con la expresión
   exacta del panel, no solo con la métrica cruda. Dashboard de 6 paneles
