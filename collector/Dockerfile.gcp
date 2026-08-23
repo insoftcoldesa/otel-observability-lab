@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1
+#
+# Collector para Cloud Run. A diferencia de la imagen local, aqui NO hace falta
+# busybox: el healthcheck no lo hace Docker Compose sino Cloud Run, con una
+# sonda TCP contra el puerto de la extension health_check.
+#
+# La configuracion va horneada en la imagen y no montada como volumen, porque
+# Cloud Run no monta ficheros del host. La alternativa seria Secret Manager,
+# que anade una dependencia sin aportar nada: esta config no tiene secretos.
+ARG OTELCOL_VERSION=0.115.1
+FROM otel/opentelemetry-collector-contrib:${OTELCOL_VERSION}
+COPY otel-collector-gcp.yaml /etc/otelcol-contrib/config.yaml

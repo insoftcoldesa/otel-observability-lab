@@ -1,0 +1,5 @@
+# Copiar a terraform.tfvars (que .gitignore excluye) y completar.
+project_id        = "otel-observability-lab-506406"
+region            = "us-central1"
+image_tag         = "v1"
+postgres_password = "cambiar-esta-clave"
