@@ -9,7 +9,7 @@
 | R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
-| R4 Benchmark de overhead | 🟨 Tooling listo y validado | k6 + orquestador + analizador; falta ejecutar `make bench` (~50 min) | — |
+| R4 Benchmark de overhead | 🟨 Tooling listo | 1ª ejecución invalidada por un bug de pool que ella misma destapó; corregido, falta repetir | — |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
@@ -228,7 +228,7 @@ dashboard reaccione es la prueba de que mide de verdad.
 | `benchmark/run-benchmark.sh` | ✅ | 2 escenarios × 3 corridas, warm-up descartado, `docker stats` cada 5 s a CSV |
 | `benchmark/analyze.py` | ✅ | Tablas de latencia, overhead, CPU/RSS y desviación entre corridas |
 | `benchmark/results/overhead-analysis.md` | 🟨 | Metodología escrita; resultados en PENDIENTE hasta ejecutar |
-| Ejecución de las 6 corridas | ⬜ | `make bench`, ~50 min |
+| Ejecución de las 6 corridas | 🟥 | Primera ejecución **invalidada** por un bug de pool ya corregido. Hay que repetir `make bench` |
 
 **El arnés está validado de punta a punta** con una corrida corta desechable
 (2 escenarios × 1 corrida × 5 VU): produjo JSON y CSV correctos, el analizador
@@ -262,6 +262,38 @@ peticiones porque va más lento. Si eso ocurre, la magnitud real del overhead
 está en la **caída de throughput**, no en la CPU, y hay que reportar las dos
 juntas. Para medir en la región lineal: `VUS=10 make bench`.
 
+### La primera ejecución se invalidó, y encontró un bug real
+
+La corrida del 22-ago 21:15 (sello `20260822-211528`) dio miles de errores
+inesperados en las 6 corridas. **Se descartó y se borraron los datos crudos.**
+
+La hipótesis previa era agotamiento de stock, y Prometheus la descartó:
+`client_error` fue **0**. El traceback de `service-b` dio la causa real:
+
+```
+File "/app/app/db.py", line 48, in connection
+    conn = _pool.getconn()
+psycopg2.pool.PoolError: connection pool exhausted     ← 11 236 ocurrencias
+```
+
+Dos bugs en `services/service-b/app/db.py`:
+
+1. **`maxconn=5`** frente a los **40 hilos** del threadpool con que Starlette
+   ejecuta los endpoints `def`. El pool no encola: lanza `PoolError` al agotarse.
+2. **`SimpleConnectionPool` no es thread-safe**, y lo llamaban 40 hilos a la vez.
+
+Corregido a `ThreadedConnectionPool` con `maxconn = 40 + 5`, atado en el código
+al límite de Starlette para que no puedan divergir. Verificado a 50 VU:
+**0 errores inesperados**, 0 `pool exhausted`.
+
+Efecto sobre las mediciones: p50 pasó de 156 a **221 ms** y el throughput de 273
+a **185 req/s** *al arreglarlo*. No es una regresión — antes miles de peticiones
+fallaban al instante sin tocar la base de datos, abaratando los percentiles.
+
+> **Para el reporte:** el benchmark encontró un bug de concurrencia que el smoke
+> test nunca habría encontrado, porque el smoke es secuencial. Es el argumento a
+> favor de medir bajo carga y no solo comprobar que los endpoints responden.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Memory: `docker info` sigue reportando **7,65 GiB**. Si se cambió el ajuste, falta *Apply & Restart* — el benchmark declara el valor medido, no el configurado
@@ -277,6 +309,11 @@ juntas. Para medir en la región lineal: `VUS=10 make bench`.
 
 ## Bitácora
 
+- **2026-08-23 (D7)** — Docker actualizado a 29.7.2 y subido a 10,68 GiB. Primera
+  ejecución del benchmark **invalidada**: destapó `PoolError: connection pool
+  exhausted` en service-b (`maxconn=5` contra 40 hilos de Starlette, y encima
+  `SimpleConnectionPool`, que no es thread-safe). Corregido y verificado a 50 VU
+  con 0 errores. Hay que repetir `make bench`.
 - **2026-08-22 (D6)** — Tooling de la Fase 4 listo y validado; falta correr las
   6 corridas (~50 min). Tres problemas cazados antes de ejecutar: el stock se
   agotaba y habría medido la ruta de error, Jaeger llenaba la memoria y habría

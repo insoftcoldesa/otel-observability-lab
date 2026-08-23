@@ -1,7 +1,13 @@
 """Acceso a PostgreSQL con psycopg2.
 
-Se usa un pool simple para que la auto-instrumentacion de psycopg2 vea cursores
-reales por request. Cero endpoints ni credenciales hardcodeadas.
+Se usa un pool para que la auto-instrumentacion de psycopg2 vea cursores reales
+por request. Cero endpoints ni credenciales hardcodeadas.
+
+Por que ThreadedConnectionPool y no SimpleConnectionPool: FastAPI ejecuta los
+endpoints declarados con `def` (no `async def`) en un threadpool, asi que varios
+hilos llaman a getconn/putconn a la vez. SimpleConnectionPool NO es thread-safe
+—su propia documentacion lo dice— y corromperse bajo concurrencia es cuestion de
+tiempo. Con un smoke test secuencial no se nota; con 50 usuarios simultaneos si.
 """
 
 import os
@@ -9,7 +15,18 @@ from contextlib import contextmanager
 
 from psycopg2 import pool
 
-_pool: pool.SimpleConnectionPool | None = None
+# Starlette limita a 40 los hilos que ejecutan endpoints sincronos (el limiter
+# por defecto de anyio). Ese es el techo real de llamadas concurrentes a
+# getconn(), asi que el pool tiene que ser AL MENOS ese numero o se agota.
+#
+# El pool no encola: getconn() lanza PoolError en cuanto se queda sin
+# conexiones. Con el valor anterior de 5, la Fase 4 produjo 11 236 excepciones
+# `connection pool exhausted` en una sola corrida, e invalido las mediciones.
+# El margen de 5 cubre el /health y algun endpoint suelto.
+_HILOS_SINCRONOS_STARLETTE = 40
+_MAXCONN_POR_DEFECTO = _HILOS_SINCRONOS_STARLETTE + 5
+
+_pool: pool.ThreadedConnectionPool | None = None
 
 
 def _dsn_kwargs() -> dict:
@@ -25,9 +42,9 @@ def _dsn_kwargs() -> dict:
 def init_pool() -> None:
     global _pool
     if _pool is None:
-        _pool = pool.SimpleConnectionPool(
+        _pool = pool.ThreadedConnectionPool(
             minconn=1,
-            maxconn=int(os.environ.get("POSTGRES_POOL_MAX", "5")),
+            maxconn=int(os.environ.get("POSTGRES_POOL_MAX", _MAXCONN_POR_DEFECTO)),
             **_dsn_kwargs(),
         )
 

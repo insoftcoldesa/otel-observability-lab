@@ -98,6 +98,75 @@ escenarios, la comparación no dice nada.
 
 ---
 
+## Corrida del 22-ago 21:15 — INVALIDADA
+
+La primera ejecución completa (6 corridas, sello `20260822-211528`) **se
+descartó**. Los datos crudos se borraron para que nadie los reutilice por error.
+El motivo queda aquí porque es un resultado en sí mismo.
+
+### Qué pasó
+
+Las seis corridas reportaron miles de *errores inesperados*:
+
+| Escenario | run1 | run2 | run3 | Tasa de éxito |
+|---|---|---|---|---|
+| A — baseline | 8 243 | 12 617 | 5 618 | 93,6 – 96,9 % |
+| B — instrumentado | 3 755 | 3 297 | 3 056 | ~97,2 % |
+
+La hipótesis documentada de antemano era agotamiento de stock, que habría dado
+respuestas 409. **Prometheus la descartó**: `client_error` fue exactamente **0**
+durante toda la ventana; todos los fallos eran 5xx.
+
+El traceback en los logs de `service-b` dio la causa real:
+
+```
+File "/app/app/db.py", line 48, in connection
+    conn = _pool.getconn()
+psycopg2.pool.PoolError: connection pool exhausted
+```
+
+**11 236 ocurrencias** solo en el contenedor de la última corrida.
+
+### La causa: dos bugs en el pool de conexiones
+
+1. **`maxconn=5` era insuficiente por diseño.** FastAPI ejecuta los endpoints
+   declarados con `def` en un threadpool que Starlette limita a **40 hilos**. Ese
+   es el techo de llamadas concurrentes a `getconn()`. Con 5 conexiones y 50
+   usuarios, el pool se agotaba de inmediato — y `getconn()` **no encola**: lanza
+   `PoolError` en cuanto se queda sin conexiones.
+2. **`SimpleConnectionPool` no es thread-safe.** Su propia documentación lo dice,
+   y aquí lo llamaban 40 hilos a la vez. Era una corrupción esperando ocurrir,
+   independiente del tamaño.
+
+Corregido a `ThreadedConnectionPool` con `maxconn = 40 + 5`, atado en el código
+al límite de hilos de Starlette para que los dos números no puedan divergir.
+
+### Por qué invalidaba las mediciones
+
+No es que "faltara un 5 % de peticiones". Es que **miles de peticiones fallaban
+al instante sin llegar a tocar la base de datos**, y esas fallas baratas entraban
+en el mismo agregado que los checkouts reales: abarataban los percentiles e
+inflaban el throughput.
+
+Se puede cuantificar. Mismo perfil de 50 VU, antes y después del arreglo:
+
+| | p50 | p95 | throughput | errores inesperados |
+|---|---|---|---|---|
+| Antes (con el bug) | 156 ms | 305 ms | 273 req/s | 3 297 |
+| Después (corregido) | **221 ms** | **446 ms** | **185 req/s** | **0** |
+
+La latencia *subió* un 42 % y el throughput *bajó* un 32 % al arreglar el bug.
+Contraintuitivo solo en apariencia: al dejar de fallar rápido, el sistema hace
+el trabajo que antes se saltaba.
+
+### Lo que esto vale para el reporte
+
+El benchmark **encontró un bug de concurrencia que el smoke test nunca habría
+encontrado**, porque el smoke es secuencial. Es un argumento directo a favor de
+medir bajo carga y no solo comprobar que los endpoints responden.
+
+---
+
 ## Advertencias metodológicas detectadas antes de ejecutar
 
 Las dos salieron de una corrida de validación del tooling con **solo 5 VU**, no
