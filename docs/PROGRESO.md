@@ -18,7 +18,7 @@ Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 
 
 | Tarea | Estado | Nota |
 |---|---|---|
-| T0.1 Docker Desktop | 🟨 | 29.2.1, 10 CPU · **pendiente: RAM 7 → 8–10 GB** |
+| T0.1 Docker Desktop | 🟨 | 29.2.1, 10 CPU · RAM **7,65 GiB** medida con `docker info` el 22-ago (de 16 GB físicos) |
 | T0.2 Python 3.12 | ✅ | 3.12.14 vía brew; sistema en 3.14.7, se aísla con uv 0.12.5 |
 | T0.3 Git + GitHub | ✅ | git 2.53.0 · `gh` autenticado como `insoftcoldesa` |
 | T0.4 k6 | ✅ | v2.0.0 |
@@ -245,6 +245,10 @@ contenedor. Esos datos se borraron: no son mediciones.
    llegó a **802 MB** de RSS. Una corrida dura 420 s y son seis: con 7,7 GB en
    Docker, el benchmark habría muerto por OOM a mitad de camino, distorsionando
    antes las mediciones. Acotado con `MEMORY_MAX_TRACES=10000`.
+
+El arnés escribe además `<sello>-entorno.json` con CPU, RAM física, RAM y CPUs
+de Docker, versiones y commit de git. Las condiciones del experimento quedan
+**medidas junto a los datos**, no transcritas a mano al reporte.
 3. **El arnés se colgaba.** El subshell que muestrea `docker stats` heredaba el
    pipe de la sustitución de comandos que captura su PID, así que `$(...)` nunca
    retornaba. Corregido con `>/dev/null 2>&1 &`.
@@ -260,7 +264,7 @@ juntas. Para medir en la región lineal: `VUS=10 make bench`.
 
 ## Pendientes inmediatos (D1, lunes 17)
 
-- [ ] Docker Desktop → Settings → Resources → Memory 8–10 GB → Apply & Restart
+- [ ] Docker Desktop → Memory: `docker info` sigue reportando **7,65 GiB**. Si se cambió el ajuste, falta *Apply & Restart* — el benchmark declara el valor medido, no el configurado
 - [ ] Crear proyecto GCP `otel-lab-obap`, vincular facturación, **budget $5** con alertas 50/90/100 %
 - [ ] Crear/verificar cuenta AWS, **AWS Budget $5** + alertas de free tier
 - [ ] `gcloud auth login && gcloud auth application-default login`

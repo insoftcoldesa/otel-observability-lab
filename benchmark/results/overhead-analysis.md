@@ -13,7 +13,7 @@
 |---|---|
 | Equipo | MacBook · Apple M4 (`Mac16,10`) |
 | CPU disponible para Docker | 10 núcleos |
-| RAM asignada a Docker | **7,7 GB** — por debajo de los 8–10 GB que pide `docs/PROGRESO.md` |
+| RAM asignada a Docker | **7,65 GiB** (8 217 059 328 bytes, `docker info`) de 16 GB físicos |
 | k6 | v2.0.0 (go1.26.3, darwin/arm64) |
 | Servicios | `python:3.12-slim`, uvicorn sin `[standard]`, 1 worker |
 | Stack | 8 contenedores, incluido el pipeline completo de telemetría |
@@ -134,11 +134,18 @@ justo las mediciones que se quieren tomar.
 
 Se acotó con `MEMORY_MAX_TRACES=10000` en el `docker-compose.yml`.
 
-### 3. RAM de Docker por debajo de lo previsto
+### 3. La RAM de Docker que se declare tiene que ser la medida, no la configurada
 
-Docker tiene **7,7 GB** asignados; `docs/PROGRESO.md` pide 8–10 GB desde el D1.
-No impide correr el benchmark, pero conviene declararlo: es parte de las
-condiciones del experimento y afecta a la reproducibilidad.
+`docker info` reporta **7,65 GiB** (8 217 059 328 bytes), y ese es el valor que
+ven los contenedores. Si en Docker Desktop aparece otro número, lo que manda es
+este: puede que el ajuste no se haya aplicado (falta *Apply & Restart*) o que la
+asignación sea dinámica.
+
+Para que el reporte no dependa de un valor apuntado a mano, `run-benchmark.sh`
+escribe `<sello>-entorno.json` al empezar, con el modelo de CPU, la RAM física,
+la RAM y CPUs que ve Docker, las versiones de Docker y k6, y el commit de git
+—incluido si el árbol estaba sucio—. **Las condiciones del experimento quedan
+medidas junto a los datos**, no transcritas después.
 
 ---
 

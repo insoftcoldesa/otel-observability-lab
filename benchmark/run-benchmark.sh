@@ -114,12 +114,47 @@ correr_escenario() {
 }
 
 # ---------------------------------------------------------------------------
+# Deja constancia del entorno EXACTO de esta corrida. El reporte tiene que
+# declarar la maquina, y apuntarla a mano se desactualiza: aqui queda medida.
+registrar_entorno() {
+  local destino="${RAW}/${SELLO}-entorno.json"
+  python3 - "$destino" <<'PYEOF'
+import json, subprocess, sys
+
+def sh(cmd):
+    try:
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                              timeout=30).stdout.strip()
+    except Exception:
+        return None
+
+mem = sh("docker info --format '{{.MemTotal}}'")
+info = {
+    "cpu_modelo": sh("sysctl -n machdep.cpu.brand_string"),
+    "equipo": sh("sysctl -n hw.model"),
+    "cpu_fisicas": sh("sysctl -n hw.ncpu"),
+    "ram_fisica_gb": round(int(sh("sysctl -n hw.memsize") or 0) / 1024**3, 2),
+    "docker_cpus": sh("docker info --format '{{.NCPU}}'"),
+    "docker_mem_bytes": int(mem) if mem and mem.isdigit() else None,
+    "docker_mem_gib": round(int(mem) / 1024**3, 2) if mem and mem.isdigit() else None,
+    "docker_version": sh("docker --version"),
+    "k6_version": (sh("k6 version") or "").splitlines()[0] if sh("k6 version") else None,
+    "git_commit": sh("git rev-parse --short HEAD"),
+    "git_sucio": bool(sh("git status --porcelain")),
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(info, f, indent=2, ensure_ascii=False)
+print(f"  RAM Docker: {info['docker_mem_gib']} GiB · CPUs: {info['docker_cpus']} · commit {info['git_commit']}")
+PYEOF
+}
+
 banner "BENCHMARK DE OVERHEAD · OpenTelemetry"
 echo "  maquina:   $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo '?')"
 echo "  Docker:    $(docker info --format '{{.NCPU}} CPUs' 2>/dev/null), $(docker info --format '{{.MemTotal}}' 2>/dev/null | awk '{printf "%.1f GB", $1/1024/1024/1024}')"
 echo "  k6:        $(k6 version 2>/dev/null | head -1)"
 echo "  corridas:  ${CORRIDAS} por escenario (la 1 es warm-up)"
 echo "  sello:     ${SELLO}"
+registrar_entorno
 
 correr_escenario "A-baseline" -f docker-compose.yml -f benchmark/docker-compose.baseline.yml
 correr_escenario "B-instrumentado" -f docker-compose.yml
