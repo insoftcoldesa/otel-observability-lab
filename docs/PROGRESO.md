@@ -8,8 +8,8 @@
 |---|---|---|---|
 | R1 Instrumentación OTel SDK | 🟨 Código completo | T1.1–T1.8 verificados en local; los 3 pilares llegan por OTLP/gRPC | falta captura en `docs/evidencias/` |
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
-| R3 Correlación cross-signal | ⬜ No iniciado | — | — |
-| R4 Benchmark de overhead | ⬜ No iniciado | — | Docker con 7 GB (subir a 8–10) |
+| R3 Correlación cross-signal | 🟨 Mecanismo completo | métrica→traza y log→traza verificadas sobre un mismo `trace_id`; dashboard de 6 paneles | faltan las 6 capturas PNG |
+| R4 Benchmark de overhead | ⬜ No iniciado | fuente de CPU y memoria ya resuelta con `docker_stats` | Docker con 7 GB (subir a 8–10) |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
@@ -174,6 +174,52 @@ También hubo que **construir una imagen propia del Collector**
 sin shell ni wget— así que no había con qué responder al healthcheck. Se le
 agrega busybox (~1,5 MB) solo para eso. En la nube se usa la imagen oficial.
 
+## Fase 3 — Correlación cross-signal (R3) 🟨 MECANISMO COMPLETO, FALTAN CAPTURAS
+
+| Tarea | Estado | Nota |
+|---|---|---|
+| T3.1 Propagación de contexto | ✅ | `service-a → service-b → postgres` en una sola traza; `SELECT`/`UPDATE` cuelgan de `inventory.reserve_stock` |
+| T3.4 Los 4 SLIs en PromQL | ✅ | Documentados con su porqué en [`docs/sli-slo.md`](sli-slo.md), las 8 consultas validadas contra el stack |
+| T3.5 Dashboard de 6 paneles | ✅ | `observability/grafana/dashboards/slo-dashboard.json`, aprovisionado solo |
+| T3.6 Traza ↔ logs | ✅ | Derived field por `matcherType: label`; 7 líneas de los dos servicios por `trace_id` |
+| T3.7 Métricas ↔ trazas | ✅ | **Exemplars de punta a punta. No hizo falta plan B** |
+| T3.8 Las 3 capturas | ⬜ | Guion listo en [`docs/evidencias/GUION-CAPTURAS.md`](evidencias/GUION-CAPTURAS.md) + `make traces` |
+
+**T3.7 verificado con la expresión exacta del panel**, no solo con la métrica cruda:
+
+```
+expresion EXACTA del panel   -> 16 series, 17 exemplars
+    el mas lento: 813.4 ms  trace_id=e5e47d10a1a2015244ef2104897190ad
+ese trace_id EN JAEGER: 15 spans, 816 ms, servicios ['service-a', 'service-b']
+```
+
+El exemplar dice 813,4 ms y la traza real dura 816 ms. Coinciden.
+
+**Las tres señales sobre un mismo `trace_id`** — esto es literalmente R3:
+
+```
+1. METRICA (Prometheus)   exemplar de 813.4 ms
+2. TRAZA   (Jaeger)       15 spans · 816 ms · service-a + service-b
+3. LOGS    (Loki)         7 lineas de los dos servicios
+```
+
+**Valores de los SLIs** con el tráfico de `make smoke`: disponibilidad 88 %,
+p95 843 ms, tasa de error 12 %, throughput 0,12 rps. Están **fuera de SLO a
+propósito** — el smoke inyecta 3 fallos y 3 peticiones de 800 ms sobre 28. Que el
+dashboard reaccione es la prueba de que mide de verdad.
+
+### Dos cosas que hubo que resolver
+
+1. **No teníamos métrica de CPU para el panel 5.** El SDK de OTel instrumenta
+   peticiones, no el runtime. Se añadió el receiver `docker_stats` al Collector,
+   que da CPU y memoria **por contenedor**. Sirve dos veces: cierra T3.5 y es la
+   fuente de las dimensiones que exige R4 en la Fase 4, sin parsear `docker stats`.
+   Requiere `api_version: "1.44"` (el receiver pide 1.25 y Docker 29 exige 1.44)
+   y `user: "0:0"` en el compose para leer el socket. Ambas cosas son solo locales.
+2. **`otelcol_processor_dropped_spans` no existe** en el Collector 0.115.1, como
+   ya se había detectado. El panel 6 usa `otelcol_receiver_refused_spans` y
+   `otelcol_exporter_send_failed_spans`, que cubren lo mismo.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Settings → Resources → Memory 8–10 GB → Apply & Restart
@@ -189,6 +235,12 @@ agrega busybox (~1,5 MB) solo para eso. En la nube se usa la imagen oficial.
 
 ## Bitácora
 
+- **2026-08-22 (D6)** — Fase 3 cerrada salvo capturas. **T3.7 no necesitó plan B**:
+  los exemplars funcionan de punta a punta y se verificaron con la expresión
+  exacta del panel, no solo con la métrica cruda. Dashboard de 6 paneles
+  aprovisionado, 4 SLIs documentados en `docs/sli-slo.md` y `make traces` para
+  entregar los `trace_id` listos para capturar. Queda solo apretar el botón de
+  captura seis veces: guion en `docs/evidencias/GUION-CAPTURAS.md`.
 - **2026-08-22 (D6)** — Adoptadas las 5 mejoras que salieron de revisar
   `insoftcoldesa/OTelLabs` (ver `docs/comparativa-OTelLabs.md`), todas verificadas:
   `filter/health` (los spans de healthcheck pasaron de 12 a **0**),

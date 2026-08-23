@@ -146,8 +146,14 @@ services:
     image: otel-lab/collector:local
     container_name: otel-lab-collector
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    # SOLO LOCAL: root y el socket de Docker, que es lo que necesita el receiver
+    # docker_stats para leer CPU y memoria por contenedor. La imagen oficial
+    # corre como uid 10001 y el socket es de root, asi que sin esto da permiso
+    # denegado. En la nube no se usa docker_stats ni esta linea.
+    user: "0:0"
     volumes:
       - ./collector/otel-collector-local.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP

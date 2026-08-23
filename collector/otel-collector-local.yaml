@@ -23,6 +23,27 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+  # CPU y memoria POR CONTENEDOR, leidos del socket de Docker.
+  # Hace falta porque los servicios no emiten metricas de proceso: el SDK de
+  # OTel instrumenta peticiones, no el runtime. Sin esto el panel 5 del
+  # dashboard (CPU de los servicios) no tendria de donde salir.
+  # Sirve dos veces: cierra T3.5 y es la fuente de las dimensiones de CPU y
+  # memoria que exige R4 en la Fase 4, sin tener que parsear `docker stats`.
+  # SOLO LOCAL: en Cloud Run y Fargate las metricas de contenedor las da la
+  # plataforma, y ahi no hay socket de Docker que leer.
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 10s
+    # Obligatorio: el receiver pide la API 1.25 por defecto y Docker 29 exige
+    # 1.44 como minimo. Sin esta linea el Collector arranca y muere al instante
+    # con "client version 1.25 is too old".
+    api_version: "1.44"
+    metrics:
+      container.cpu.utilization:
+        enabled: true
+      container.memory.usage.total:
+        enabled: true
+
 # ---------------------------------------------------------------------------
 # PROCESSORS — EL ORDEN NO ES NEGOCIABLE
 # ---------------------------------------------------------------------------
@@ -230,7 +251,7 @@ service:
       exporters: [otlp/jaeger]
 
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, docker_stats]
       processors: [memory_limiter, resource, resourcedetection, batch]
       exporters: [prometheus]
 

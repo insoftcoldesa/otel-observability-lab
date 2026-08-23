@@ -22,3 +22,9 @@
 2. [Los backends](Fase-2-02-Backends)
 3. [El docker-compose](Fase-2-03-Compose)
 4. [Verificación y hallazgos](Fase-2-04-Verificacion)
+
+**Fase 3 — Correlación**
+
+0. [Panorama](Fase-3-00-Panorama)
+1. [Dashboard y SLIs](Fase-3-01-Dashboard-y-SLIs)
+2. [Correlación y capturas](Fase-3-02-Correlacion)

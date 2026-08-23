@@ -47,11 +47,22 @@ comando no da lo que dice la página, no sigas a la siguiente.
 
 ---
 
+## Guía de la Fase 3 — Correlación cross-signal (criterio R3)
+
+| # | Página | Qué aprendes |
+|---|---|---|
+| 0 | [Panorama de la correlación](Fase-3-00-Panorama.md) | Por qué saltar entre pilares cambia una investigación |
+| 1 | [El dashboard y los SLIs](Fase-3-01-Dashboard-y-SLIs.md) | Los 6 paneles, y de dónde sale la métrica de CPU |
+| 2 | [La correlación y las capturas](Fase-3-02-Correlacion.md) | Los 5 eslabones del exemplar y el guion de evidencias |
+
+Las consultas PromQL de los 4 SLIs, una por una: [`docs/sli-slo.md`](../sli-slo.md).
+
+---
+
 ## Fases siguientes
 
 | Fase | Criterio | Estado |
 |---|---|---|
-| Fase 3 — Correlación cross-signal | R3 | pendiente |
 | Fase 4 — Benchmark de overhead | R4 | pendiente |
 | Fase 5 y 6 — GCP y AWS | R2, R5 | pendiente |
 | Fase 7 — Cierre y reporte | R5 | pendiente |

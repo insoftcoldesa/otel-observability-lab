@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help preflight local-up local-down local-logs local-ps smoke bench gcp-up gcp-down aws-up aws-down clean
+.PHONY: help preflight local-up local-down local-logs local-ps smoke traces bench gcp-up gcp-down aws-up aws-down clean
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -25,6 +25,9 @@ local-logs: ## Logs en vivo
 
 smoke: ## Genera trafico de prueba (exito, error y lento)
 	@bash scripts/smoke-test.sh
+
+traces: ## Entrega los trace_id listos para capturar (Fase 3)
+	@bash scripts/pick-traces.sh
 
 bench: ## Corre el benchmark de overhead (Fase 4)
 	@bash benchmark/run-benchmark.sh
