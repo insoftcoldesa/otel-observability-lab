@@ -1,0 +1,119 @@
+# OpenTelemetry Collector — despliegue en GCP (criterio R2)
+#
+# COMPARA ESTE ARCHIVO CON otel-collector-local.yaml. Los receivers son los
+# mismos, los processors son los mismos y los pipelines son los mismos. Lo unico
+# que cambia son los EXPORTERS.
+#
+# Ese diff es el argumento entero de la arquitectura: la aplicacion exporta a una
+# sola direccion OTLP y no sabe a donde van sus datos. Migrar de Jaeger,
+# Prometheus y Loki a Cloud Trace, Managed Prometheus y Cloud Logging no toca ni
+# una linea de codigo de service-a ni de service-b, ni obliga a reconstruir sus
+# imagenes: se cambia este YAML.
+#
+# Se despliega como CONTENEDOR SIDECAR en Cloud Run, no como servicio aparte.
+# Los sidecars comparten el espacio de red de la instancia, asi que el servicio
+# exporta a localhost:4317 y el Collector nunca queda expuesto a internet. Ese
+# es el patron que documenta Google para Cloud Run, y ademas evita un conector
+# de VPC, que si tendria costo.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Mas ajustado que en local: la instancia de Cloud Run comparte memoria entre
+  # el servicio, PostgreSQL y este Collector. 128 MiB bastan porque el volumen
+  # de un laboratorio es minimo y el lote se vacia rapido.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 128
+    spike_limit_mib: 32
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: gcp
+        action: upsert
+      - key: service.namespace
+        value: otel-lab
+        action: upsert
+
+  # AQUI ESTA EL VALOR REAL DE resourcedetection, y es la razon por la que se
+  # adopto en la Fase 3 aunque en local solo aportara host.name y os.type.
+  # El detector `gcp` rellena solo project_id, region, revision de Cloud Run e
+  # instance_id leyendo el servidor de metadatos. Sin el habria que pasar todo
+  # eso a mano por variables de entorno.
+  resourcedetection:
+    detectors: [env, gcp]
+    timeout: 10s
+    override: false
+
+  # Cloud Run somete el contenedor a sondas de salud constantes. Sin este filtro
+  # cada una generaria una traza y consumiria cuota de Cloud Trace sin aportar.
+  filter/health:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.target"] == "/health"'
+        - 'IsMatch(name, ".*/health.*")'
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  # TRAZAS Y LOGS -> Cloud Trace y Cloud Logging.
+  # Un solo exporter cubre los dos pilares. La autenticacion NO lleva claves:
+  # usa las credenciales por defecto de la cuenta de servicio de Cloud Run
+  # (Application Default Credentials). Por eso el repositorio no contiene ni un
+  # solo secreto de GCP.
+  googlecloud:
+    project: ${env:GCP_PROJECT_ID}
+    log:
+      default_log_name: otel-lab
+
+  # METRICAS -> Google Managed Service for Prometheus.
+  # Se elige este y no `googlecloud` para metricas porque conserva el modelo de
+  # datos de Prometheus: las mismas consultas PromQL del dashboard de la Fase 3
+  # siguen sirviendo, incluidos los exemplars.
+  googlemanagedprometheus:
+    project: ${env:GCP_PROJECT_ID}
+
+extensions:
+  # Cloud Run necesita saber si el sidecar esta listo antes de enrutar trafico.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+
+  telemetry:
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, resourcedetection, filter/health, batch]
+      exporters: [googlecloud]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, resourcedetection, batch]
+      exporters: [googlemanagedprometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, resourcedetection, batch]
+      exporters: [googlecloud]
