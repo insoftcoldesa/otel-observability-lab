@@ -10,7 +10,7 @@
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
 | R4 Benchmark de overhead | ✅ **Completo** | 6/6 corridas válidas; `benchmark/results/overhead-analysis.md` con las 3 dimensiones | — |
-| R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
+| R5 IaC y calidad del repo | 🟨 En curso | repo organizado, wiki de 20 págs, **reporte APA 7 de 7 págs** | **Terraform pendiente — cuentas de nube** |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
 
@@ -323,6 +323,26 @@ Del sobrecoste, **67 % se paga en la aplicación y 33 % en los backends**. Eso
 determina la recomendación de sampling: el *tail sampling* solo recortaría ese
 tercio, así que la palanca real es el *head sampling*.
 
+## Fase 7 — Reporte técnico (T7.5) ✅ BORRADOR COMPLETO
+
+`docs/reporte/Reporte-Tecnico-OTel-MASS-OBAP20264.docx` — **7 páginas**, dentro
+del rango pedido (5–7), formato APA 7: Times New Roman 12, márgenes de 1",
+doble espacio, numeración en encabezado, 3 tablas y 2 figuras rotuladas, y 7
+referencias con sangría francesa.
+
+El conteo de páginas **se verificó paginando con Word** vía AppleScript, no
+estimando: las estimaciones daban 7,4 cuando el documento tenía 9.
+
+Contenido: arquitectura, decisiones de diseño, correlación cross-signal con
+evidencia, análisis de overhead con las 3 dimensiones, el hallazgo del bug de
+concurrencia y la recomendación de sampling.
+
+Se versiona también `docs/reporte/generar-reporte.py`: si cambia un número del
+benchmark se edita y se regenera, en vez de mantener un .docx a mano.
+
+**Pendiente:** el nombre del docente en la portada está como
+`[Nombre del docente]` — no aparece en ningún sitio del repositorio.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Memory: `docker info` sigue reportando **7,65 GiB**. Si se cambió el ajuste, falta *Apply & Restart* — el benchmark declara el valor medido, no el configurado
@@ -338,6 +358,8 @@ tercio, así que la palanca real es el *head sampling*.
 
 ## Bitácora
 
+- **2026-08-23 (D7)** — Reporte técnico APA 7 generado: 7 páginas, verificadas
+  paginando con Word. Falta solo el nombre del docente en la portada.
 - **2026-08-23 (D7)** — **R4 cerrado.** Segunda ejecución del benchmark válida:
   6/6 corridas con 0 errores. Overhead medido: +32 ms p50, +83,5 ms p99, −19,7 %
   de throughput, +4,5 MB de RSS y **+28,5 % de CPU por petición**. La ley de
