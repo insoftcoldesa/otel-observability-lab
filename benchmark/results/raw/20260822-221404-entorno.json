@@ -1,0 +1,13 @@
+{
+  "cpu_modelo": "Apple M4",
+  "equipo": "Mac16,10",
+  "cpu_fisicas": "10",
+  "ram_fisica_gb": 16.0,
+  "docker_cpus": "10",
+  "docker_mem_bytes": 11471511552,
+  "docker_mem_gib": 10.68,
+  "docker_version": "Docker version 29.7.2, build a7dcaa6",
+  "k6_version": "k6 v2.0.0 (commit/devel, go1.26.3, darwin/arm64)",
+  "git_commit": "9931312",
+  "git_sucio": false
+}

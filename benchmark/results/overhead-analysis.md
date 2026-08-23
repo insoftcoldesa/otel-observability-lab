@@ -1,9 +1,10 @@
 # Análisis de overhead de OpenTelemetry (R4)
 
-> **Estado: PENDIENTE DE EJECUCIÓN.**
-> El tooling está listo y validado. Las tablas se llenan cuando se corra
-> `make bench`. **Ningún número de este documento está inventado**: lo que no se
-> haya medido aparece como PENDIENTE.
+> **Estado: COMPLETO.** Ejecutado el 22-ago-2026, sello `20260822-221404`.
+> Las 6 corridas fueron válidas: 0 errores inesperados y 100,00 % de tasa de
+> éxito. **Ningún número de este documento está inventado**: todos salen de
+> `benchmark/results/tablas-20260822-221404.md` o se derivan de los CSV crudos
+> con la aritmética que se muestra.
 
 ---
 
@@ -11,12 +12,17 @@
 
 | | |
 |---|---|
-| Equipo | MacBook · Apple M4 (`Mac16,10`) |
+| Equipo | `Mac16,10` · Apple M4 · 10 núcleos · 16 GB |
 | CPU disponible para Docker | 10 núcleos |
-| RAM asignada a Docker | **7,65 GiB** (8 217 059 328 bytes, `docker info`) de 16 GB físicos |
+| RAM asignada a Docker | **10.68 GiB** (11 471 511 552 bytes) |
+| Docker | 29.7.2, build a7dcaa6 |
 | k6 | v2.0.0 (go1.26.3, darwin/arm64) |
+| Commit del código medido | `9931312` (árbol limpio) |
 | Servicios | `python:3.12-slim`, uvicorn sin `[standard]`, 1 worker |
 | Stack | 8 contenedores, incluido el pipeline completo de telemetría |
+
+Estos valores no están transcritos a mano: los registra `run-benchmark.sh` en
+`benchmark/results/raw/20260822-221404-entorno.json` al arrancar la corrida.
 
 ## Metodología
 
@@ -66,169 +72,205 @@ práctica, porque la decisión real en producción es "SDK activo o no", no
 
 ## Resultados
 
-PENDIENTE — correr `make bench` y luego `python3 benchmark/analyze.py`.
+Ejecución del 22-ago 22:14, sello `20260822-221404`. **Las 6 corridas válidas**:
+0 errores inesperados y 100,00 % de tasa de éxito en todas.
 
-### Latencia
+### Latencia del checkout exitoso
 
-| Escenario | p50 (ms) | p95 (ms) | p99 (ms) | desv. p95 | throughput (req/s) |
-|---|---|---|---|---|---|
-| A — baseline | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
-| B — instrumentado | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
+Media de las corridas 2 y 3; la 1 se descartó como warm-up.
+
+| Escenario | p50 | p95 | p99 | desv. p95 | throughput | peticiones |
+|---|---|---|---|---|---|---|
+| A — baseline | 135,5 ms | 199,5 ms | 245,5 ms | 10,6 ms (5,3 %) | 336,6 req/s | 254 407 |
+| B — instrumentado | 167,5 ms | 257,0 ms | 329,0 ms | 4,2 ms (1,7 %) | 270,1 req/s | 204 435 |
 
 ### Overhead
 
 | Métrica | Baseline | Instrumentado | Δ absoluto | Δ % |
 |---|---|---|---|---|
-| Latencia p50 | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
-| Latencia p95 | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
-| Latencia p99 | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
-| Throughput | PENDIENTE | PENDIENTE | PENDIENTE | PENDIENTE |
+| Latencia p50 | 135,50 ms | 167,50 ms | **+32,00 ms** | +23,6 % |
+| Latencia p95 | 199,50 ms | 257,00 ms | **+57,50 ms** | +28,8 % |
+| Latencia p99 | 245,50 ms | 329,00 ms | **+83,50 ms** | +34,0 % |
+| Throughput | 336,62 req/s | 270,14 req/s | −66,48 req/s | **−19,7 %** |
 
-### CPU y memoria
+### Memoria residente de los servicios
 
-| Contenedor | CPU media | CPU pico | RSS medio | RSS pico | Escenario |
-|---|---|---|---|---|---|
-| PENDIENTE | | | | | |
+| Contenedor | RSS baseline | RSS instrumentado | Δ |
+|---|---|---|---|
+| `service-a` | 65,5 MB | 70,1 MB | **+4,6 MB** |
+| `service-b` | 63,1 MB | 67,3 MB | **+4,3 MB** |
 
 ### Desviación entre corridas
 
-PENDIENTE. **Sin esta cifra el benchmark no es defendible**: si la variación
-entre corridas del mismo escenario es del orden de la diferencia entre
-escenarios, la comparación no dice nada.
+| Escenario | p95 | p99 |
+|---|---|---|
+| A — baseline | 10,6 ms sobre 199,5 (**5,3 %**) | 16,3 ms sobre 245,5 (6,6 %) |
+| B — instrumentado | 4,2 ms sobre 257,0 (**1,7 %**) | 11,3 ms sobre 329,0 (3,4 %) |
 
----
-
-## Corrida del 22-ago 21:15 — INVALIDADA
-
-La primera ejecución completa (6 corridas, sello `20260822-211528`) **se
-descartó**. Los datos crudos se borraron para que nadie los reutilice por error.
-El motivo queda aquí porque es un resultado en sí mismo.
-
-### Qué pasó
-
-Las seis corridas reportaron miles de *errores inesperados*:
-
-| Escenario | run1 | run2 | run3 | Tasa de éxito |
-|---|---|---|---|---|
-| A — baseline | 8 243 | 12 617 | 5 618 | 93,6 – 96,9 % |
-| B — instrumentado | 3 755 | 3 297 | 3 056 | ~97,2 % |
-
-La hipótesis documentada de antemano era agotamiento de stock, que habría dado
-respuestas 409. **Prometheus la descartó**: `client_error` fue exactamente **0**
-durante toda la ventana; todos los fallos eran 5xx.
-
-El traceback en los logs de `service-b` dio la causa real:
-
-```
-File "/app/app/db.py", line 48, in connection
-    conn = _pool.getconn()
-psycopg2.pool.PoolError: connection pool exhausted
-```
-
-**11 236 ocurrencias** solo en el contenedor de la última corrida.
-
-### La causa: dos bugs en el pool de conexiones
-
-1. **`maxconn=5` era insuficiente por diseño.** FastAPI ejecuta los endpoints
-   declarados con `def` en un threadpool que Starlette limita a **40 hilos**. Ese
-   es el techo de llamadas concurrentes a `getconn()`. Con 5 conexiones y 50
-   usuarios, el pool se agotaba de inmediato — y `getconn()` **no encola**: lanza
-   `PoolError` en cuanto se queda sin conexiones.
-2. **`SimpleConnectionPool` no es thread-safe.** Su propia documentación lo dice,
-   y aquí lo llamaban 40 hilos a la vez. Era una corrupción esperando ocurrir,
-   independiente del tamaño.
-
-Corregido a `ThreadedConnectionPool` con `maxconn = 40 + 5`, atado en el código
-al límite de hilos de Starlette para que los dos números no puedan divergir.
-
-### Por qué invalidaba las mediciones
-
-No es que "faltara un 5 % de peticiones". Es que **miles de peticiones fallaban
-al instante sin llegar a tocar la base de datos**, y esas fallas baratas entraban
-en el mismo agregado que los checkouts reales: abarataban los percentiles e
-inflaban el throughput.
-
-Se puede cuantificar. Mismo perfil de 50 VU, antes y después del arreglo:
-
-| | p50 | p95 | throughput | errores inesperados |
-|---|---|---|---|---|
-| Antes (con el bug) | 156 ms | 305 ms | 273 req/s | 3 297 |
-| Después (corregido) | **221 ms** | **446 ms** | **185 req/s** | **0** |
-
-La latencia *subió* un 42 % y el throughput *bajó* un 32 % al arreglar el bug.
-Contraintuitivo solo en apariencia: al dejar de fallar rápido, el sistema hace
-el trabajo que antes se saltaba.
-
-### Lo que esto vale para el reporte
-
-El benchmark **encontró un bug de concurrencia que el smoke test nunca habría
-encontrado**, porque el smoke es secuencial. Es un argumento directo a favor de
-medir bajo carga y no solo comprobar que los endpoints responden.
-
----
-
-## Advertencias metodológicas detectadas antes de ejecutar
-
-Las dos salieron de una corrida de validación del tooling con **solo 5 VU**, no
-de mediciones reales.
-
-### 1. Los servicios se saturan, y eso cambia lo que significa el número
-
-Con 5 VU, `service-a` y `service-b` ya alcanzaban **picos de 144 % de CPU**
-(más de 1,4 núcleos). Con 50 VU van a estar saturados.
-
-En un sistema saturado, la CPU deja de ser una medida útil del overhead: se pega
-al techo en los dos escenarios. En la validación el delta de CPU salió
-**negativo** —el escenario instrumentado usaba *menos* CPU— y eso no es un
-ahorro: es que procesó menos peticiones porque iba más lento.
-
-**Consecuencia para la lectura de los resultados:** si el delta de CPU sale
-negativo, la magnitud real del overhead está en la **caída de throughput**, no
-en la CPU. Las dos cosas hay que reportarlas juntas o el número engaña.
-
-Si se quiere además medir el overhead en la región lineal, hay que correr con
-menos carga:
-
-```bash
-VUS=10 make bench
-```
-
-### 2. Jaeger llenaba la memoria — corregido antes de ejecutar
-
-En la validación de **50 segundos**, Jaeger llegó a **802 MB** de RSS con el
-almacenamiento en memoria. Una corrida del benchmark dura 420 s, y son seis
-corridas. Con 7,7 GB asignados a Docker, el benchmark habría muerto por OOM a
-mitad de camino, y antes de morir la presión de memoria habría distorsionado
-justo las mediciones que se quieren tomar.
-
-Se acotó con `MEMORY_MAX_TRACES=10000` en el `docker-compose.yml`.
-
-### 3. La RAM de Docker que se declare tiene que ser la medida, no la configurada
-
-`docker info` reporta **7,65 GiB** (8 217 059 328 bytes), y ese es el valor que
-ven los contenedores. Si en Docker Desktop aparece otro número, lo que manda es
-este: puede que el ajuste no se haya aplicado (falta *Apply & Restart*) o que la
-asignación sea dinámica.
-
-Para que el reporte no dependa de un valor apuntado a mano, `run-benchmark.sh`
-escribe `<sello>-entorno.json` al empezar, con el modelo de CPU, la RAM física,
-la RAM y CPUs que ve Docker, las versiones de Docker y k6, y el commit de git
-—incluido si el árbol estaba sucio—. **Las condiciones del experimento quedan
-medidas junto a los datos**, no transcritas después.
+**La comparación es defendible**: la diferencia entre escenarios en p95 es de
+57,5 ms y la variación entre corridas del mismo escenario es de 4–11 ms. La
+señal está unas 5 veces por encima del ruido.
 
 ---
 
 ## Interpretación
 
-PENDIENTE — se escribe cuando existan los datos. Cubrirá:
+### El número honesto es +28,5 % de CPU por petición, no +34 % de p99
 
-- **Dónde se paga el overhead**: creación y poblado de spans, cardinalidad de
-  atributos, serialización a protobuf, y exportación por lotes frente a síncrona.
-- **Por qué el `BatchSpanProcessor` importa tanto**: convierte una llamada de red
-  por span en una por lote, y es la diferencia entre un overhead tolerable y uno
-  inaceptable.
-- **Estrategia de sampling recomendada para producción**, con el razonamiento
-  detrás. Es además uno de los tres ADRs pendientes de la Fase 7.
+Los tres números de latencia y el de throughput **no son cuatro hallazgos: son
+uno solo visto desde cuatro ángulos**, y confundirlos lleva a exagerar.
+
+El benchmark es un **lazo cerrado**: 50 usuarios virtuales sin tiempo de espera.
+En ese régimen manda la ley de Little, `R = N / X`:
+
+| | throughput medido | latencia que predice la ley |
+|---|---|---|
+| A | 336,62 req/s | 50 / 336,62 = **148,5 ms** |
+| B | 270,14 req/s | 50 / 270,14 = **185,1 ms** |
+
+La ley predice **+24,6 %** de latencia; el p50 medido subió **+23,6 %**. Coinciden
+dentro de un punto porcentual. Es decir: **la subida de latencia y la caída de
+throughput son el mismo fenómeno**, no dos costes que se suman.
+
+Lo que de verdad cambió es el **tiempo de servicio**: cuánta CPU cuesta atender
+una petición. Y eso se mide normalizando la CPU por el throughput:
+
+| Contenedor | CPU/req A | CPU/req B | Δ |
+|---|---|---|---|
+| `service-a` | 0,2672 | 0,3189 | **+19,3 %** |
+| `service-b` | 0,2935 | 0,3770 | **+28,5 %** |
+| `postgres` | 0,2330 | 0,2493 | +7,0 % |
+| `otel-collector` | 0,0019 | 0,0180 | +860 % |
+| `jaeger` | 0,0004 | 0,0410 | +10 381 % |
+| `loki` | 0,0019 | 0,0207 | +1 001 % |
+| **TOTAL** | **0,7978** | **1,0249** | **+28,5 %** |
+
+*(unidad: % de CPU dividido por req/s; equivale al coste de CPU por petición)*
+
+**Instrumentar cuesta un 28,5 % más de CPU por petición.** Ese es el número
+transferible a otro sistema. Los +34 % de p99 **no lo son**: dependen de que
+este sistema estuviera al borde de la saturación.
+
+> **Cómo NO citar este resultado.** «OpenTelemetry hace la aplicación un 34 %
+> más lenta» es falso como afirmación general. En un sistema con holgura, un
+> +28 % de tiempo de servicio se traduce en un aumento de latencia mucho menor,
+> porque no hay cola que lo amplifique. Aquí sí la había: `service-b` promedió
+> **98,8 % de CPU** en el baseline, es decir, un núcleo saturado de forma
+> sostenida.
+
+### El delta de CPU en bruto engaña, y estaba anticipado
+
+La tabla en bruto dice `service-a: −3,81 pp` y `service-b: +3,05 pp`. Leído tal
+cual, sugeriría que instrumentar **ahorra** CPU en `service-a`. Es falso.
+
+Bajo saturación los dos escenarios pegan contra el mismo techo de CPU: lo que
+cambia no es cuánta CPU se consume, sino **cuántas peticiones se atienden con
+ella**. `service-a` gastó menos CPU total porque procesó 50 000 peticiones menos.
+
+Esta advertencia estaba escrita en este documento **antes** de ejecutar, y se
+cumplió. Por eso el análisis usa la CPU normalizada.
+
+### Dónde se paga el sobrecoste
+
+Del 28,5 % total, **dos tercios se pagan en la capa de aplicación y un tercio en
+los backends de telemetría**:
+
+| Capa | CPU/req A | CPU/req B | Aporte al sobrecoste |
+|---|---|---|---|
+| Aplicación (`service-a`, `service-b`, `postgres`) | 0,7937 | 0,9452 | **67 %** |
+| Backends (Collector, Jaeger, Loki) | 0,0042 | 0,0797 | **33 %** |
+
+Dentro de la aplicación, el coste se reparte así:
+
+1. **Creación y poblado de spans.** Cada checkout genera ~15 spans: el de
+   servidor de cada servicio, el cliente HTTP, los de negocio (`validate_cart`,
+   `apply_discount`, `reserve_stock`) y los de SQL. Cada uno asigna memoria,
+   captura tiempos y guarda atributos.
+2. **Serialización a protobuf.** Los spans se convierten al formato OTLP antes
+   de salir. Es trabajo de CPU proporcional al número de spans y de atributos.
+3. **Cardinalidad de los atributos.** `db.statement` con la consulta completa es
+   una cadena que se copia y se serializa en cada span SQL. Los atributos son
+   baratos de uno en uno y caros por acumulación.
+4. **`service-b` paga más que `service-a`** (+28,5 % frente a +19,3 %) y tiene
+   sentido: es el que hace las consultas SQL, así que genera más spans por
+   petición.
+
+**PostgreSQL sube un 7 %** aunque hace exactamente el mismo trabajo. No es
+instrumentación —el servidor no sabe nada de OTel—: es un efecto de segundo
+orden del cambio en el patrón temporal de las consultas.
+
+### Por qué el `BatchSpanProcessor` es lo que hace esto viable
+
+El Collector consume **0,018 % de CPU por petición**: prácticamente nada para
+recibir ~15 spans, procesarlos por cuatro etapas y reenviarlos a tres backends.
+
+Eso solo es posible por el agrupamiento. Sin `BatchSpanProcessor`, cada span
+sería una llamada de red independiente: ~15 conexiones gRPC por checkout en vez
+de una fracción de lote. El coste no sería un 28 % más de CPU, sería otro orden
+de magnitud, y estaría dominado por sincronización de red en la ruta crítica de
+la petición.
+
+Es la diferencia entre un overhead que se discute y uno que descarta la
+instrumentación de entrada.
+
+### Memoria
+
+**+4,6 MB y +4,3 MB** por servicio. Es poco y, más importante, **está acotado**:
+la memoria extra es la cola del `BatchSpanProcessor` más las estructuras del
+SDK, ambas con techo configurado. No crece con el tráfico.
+
+Comparado con los ~65 MB de base, es un **+7 %** de RSS. En Cloud Run o Fargate,
+donde la memoria se paga por tramos, no cambia de tramo.
+
+---
+
+## Estrategia de sampling recomendada
+
+Los datos apuntan a una conclusión concreta, y no es la que se suele repetir.
+
+**El *tail sampling* en el Collector no resolvería este problema.** Solo recorta
+lo que llega a los backends, y los backends son apenas un tercio del sobrecoste.
+Los otros dos tercios ya se pagaron dentro de la aplicación antes de que el
+Collector viera nada. Con tail sampling al 10 % se ahorraría ~30 % del
+sobrecoste; el 70 % seguiría ahí.
+
+**Lo que recorta el coste medido es el *head sampling***, porque un span no
+muestreado es no-grabador: no se crean atributos, no se serializa, no se exporta.
+
+Recomendación para producción, por tramos:
+
+| Situación | Estrategia |
+|---|---|
+| Servicio de bajo volumen o crítico | **100 %.** El 28 % de CPU se paga sin drama y la capacidad de diagnóstico completa vale más |
+| Alto volumen, con holgura de CPU | **100 % en el SDK + `tail_sampling` en el Collector** conservando el 100 % de errores y trazas lentas, y un 5–10 % del resto. Se queda todo el valor diagnóstico y se recorta el coste de almacenamiento |
+| Alto volumen, sin holgura de CPU | **Head sampling** con `parentbased_traceidratio` al 10 %. Es la única palanca que reduce el coste dentro de la aplicación |
+
+**El punto que no hay que perder de vista**: con head sampling se pierde el 90 %
+de las trazas *incluidos los errores*, porque la decisión se toma al inicio,
+cuando aún no se sabe que la petición va a fallar. La mitigación es mantener
+**métricas y logs al 100 %** —son mucho más baratos que las trazas— para que un
+incidente siga siendo visible aunque no haya traza que abrir.
+
+En este laboratorio se mantiene el **100 %**: el volumen es de juguete y perder
+trazas destruiría la evidencia de correlación de R3.
+
+> Esta decisión es uno de los tres ADRs pendientes de la Fase 7.
+
+---
+
+## Qué NO mide este benchmark
+
+Honestidad sobre los límites, que es parte del criterio:
+
+1. **No mide el coste de tener las librerías parcheadas.** El baseline corre con
+   `opentelemetry-instrument`, solo que con el SDK desactivado. El coste real de
+   instrumentar es algo mayor que el 28,5 % reportado, que es una **cota inferior**.
+2. **Mide un sistema saturado.** Los números de latencia son específicos de esta
+   utilización. El de CPU por petición es el transferible.
+3. **Una sola máquina, un solo perfil de carga.** Sin variación de tamaño de
+   carrito ni de mezcla de endpoints.
+4. **Dos corridas útiles por escenario.** La desviación se calcula sobre dos
+   puntos: suficiente para acotar el ruido, no para un intervalo de confianza.
 
 ---
 

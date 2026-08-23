@@ -9,7 +9,7 @@
 | R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
 | R2 Collector en ambas clouds | 🟨 Local completo | Collector versionado, stack de 8 contenedores healthy, 3 pilares llegando | **Cuentas de nube sin crear** |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
-| R4 Benchmark de overhead | 🟨 Tooling listo | 1ª ejecución invalidada por un bug de pool que ella misma destapó; corregido, falta repetir | — |
+| R4 Benchmark de overhead | ✅ **Completo** | 6/6 corridas válidas; `benchmark/results/overhead-analysis.md` con las 3 dimensiones | — |
 | R5 IaC y calidad del repo | 🟨 En curso | estructura, README, CLAUDE.md, Makefile, repo en GitHub | — |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
@@ -227,8 +227,8 @@ dashboard reaccione es la prueba de que mide de verdad.
 | `benchmark/load-test.js` | ✅ | Rampa 0→50 VU/60 s, meseta 300 s, bajada 60 s; 90 % éxito / 10 % `?fail=true`; thresholds declarados |
 | `benchmark/run-benchmark.sh` | ✅ | 2 escenarios × 3 corridas, warm-up descartado, `docker stats` cada 5 s a CSV |
 | `benchmark/analyze.py` | ✅ | Tablas de latencia, overhead, CPU/RSS y desviación entre corridas |
-| `benchmark/results/overhead-analysis.md` | 🟨 | Metodología escrita; resultados en PENDIENTE hasta ejecutar |
-| Ejecución de las 6 corridas | 🟥 | Primera ejecución **invalidada** por un bug de pool ya corregido. Hay que repetir `make bench` |
+| `benchmark/results/overhead-analysis.md` | ✅ | Resultados, interpretación, estrategia de sampling y límites del experimento |
+| Ejecución de las 6 corridas | ✅ | Sello `20260822-221404`: **0 errores inesperados y 100 % de éxito en las 6** |
 
 **El arnés está validado de punta a punta** con una corrida corta desechable
 (2 escenarios × 1 corrida × 5 VU): produjo JSON y CSV correctos, el analizador
@@ -294,6 +294,35 @@ fallaban al instante sin tocar la base de datos, abaratando los percentiles.
 > test nunca habría encontrado, porque el smoke es secuencial. Es el argumento a
 > favor de medir bajo carga y no solo comprobar que los endpoints responden.
 
+### Resultado del benchmark
+
+| Métrica | Baseline | Instrumentado | Δ |
+|---|---|---|---|
+| Latencia p50 | 135,5 ms | 167,5 ms | +32,0 ms (+23,6 %) |
+| Latencia p95 | 199,5 ms | 257,0 ms | +57,5 ms (+28,8 %) |
+| Latencia p99 | 245,5 ms | 329,0 ms | +83,5 ms (+34,0 %) |
+| Throughput | 336,6 req/s | 270,1 req/s | −19,7 % |
+| RSS `service-a` / `service-b` | 65,5 / 63,1 MB | 70,1 / 67,3 MB | +4,6 / +4,3 MB |
+| **CPU por petición (todo el sistema)** | 0,7978 | 1,0249 | **+28,5 %** |
+
+Desviación entre corridas: **5,3 %** en A y **1,7 %** en B sobre el p95, frente a
+una diferencia entre escenarios del 28,8 %. La señal está 5× por encima del ruido.
+
+**El número transferible es el +28,5 % de CPU por petición, no el +34 % de p99.**
+El benchmark corre en lazo cerrado con 50 VU, así que manda la ley de Little
+`R = N/X`: predice +24,6 % de latencia y se midió +23,6 %. La subida de latencia
+y la caída de throughput **son el mismo fenómeno**, no dos costes que se suman.
+Citar «OTel hace la app un 34 % más lenta» sería falso como afirmación general:
+ese número depende de que `service-b` estuviera al 98,8 % de CPU.
+
+El delta de CPU en bruto salió engañoso (`service-a` −3,81 pp), tal como estaba
+advertido en el documento **antes** de ejecutar. Por eso el análisis normaliza la
+CPU por throughput.
+
+Del sobrecoste, **67 % se paga en la aplicación y 33 % en los backends**. Eso
+determina la recomendación de sampling: el *tail sampling* solo recortaría ese
+tercio, así que la palanca real es el *head sampling*.
+
 ## Pendientes inmediatos (D1, lunes 17)
 
 - [ ] Docker Desktop → Memory: `docker info` sigue reportando **7,65 GiB**. Si se cambió el ajuste, falta *Apply & Restart* — el benchmark declara el valor medido, no el configurado
@@ -309,6 +338,10 @@ fallaban al instante sin tocar la base de datos, abaratando los percentiles.
 
 ## Bitácora
 
+- **2026-08-23 (D7)** — **R4 cerrado.** Segunda ejecución del benchmark válida:
+  6/6 corridas con 0 errores. Overhead medido: +32 ms p50, +83,5 ms p99, −19,7 %
+  de throughput, +4,5 MB de RSS y **+28,5 % de CPU por petición**. La ley de
+  Little confirma la consistencia interna (predice +24,6 %, medido +23,6 %).
 - **2026-08-23 (D7)** — Docker actualizado a 29.7.2 y subido a 10,68 GiB. Primera
   ejecución del benchmark **invalidada**: destapó `PoolError: connection pool
   exhausted` en service-b (`maxconn=5` contra 40 hilos de Starlette, y encima
