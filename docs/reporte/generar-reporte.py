@@ -18,7 +18,17 @@ estimando, se pagina con Word:
         return n
     end tell'
 
-Estado actual: 7 paginas.
+Estado actual: 12 paginas.
+
+ATENCION: el .docx del repositorio NO se genera ya solo con este script. El
+equipo edito el documento a mano en Word —quito la tabla comparativa AWS/GCP,
+resumio la eleccion de proveedor y suavizo el apartado de limitaciones— y el
+apartado del benchmark en la nube se inserto sobre ESA version con python-docx,
+no regenerando.
+
+Si se vuelve a ejecutar este script, se PIERDEN esos cambios. Trátalo como la
+plantilla que genero el borrador inicial, no como la fuente de verdad. La fuente
+de verdad es el .docx versionado.
 
 OJO: el .docx del repositorio es la version editada y guardada desde Word, que
 ademas normaliza el formato interno del fichero. Regenerar con este script
