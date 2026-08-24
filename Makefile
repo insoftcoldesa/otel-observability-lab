@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help preflight local-up local-down local-logs local-ps smoke traces bench bench-gcp gcp-traces gcp-up gcp-down aws-up aws-down clean
+.PHONY: help preflight local-up local-down local-logs local-ps smoke traces bench gcp-traces gcp-up gcp-down clean
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -44,11 +44,6 @@ gcp-traces: ## Genera trafico en GCP y da los enlaces para capturar evidencia
 gcp-down: ## Destruye todo en GCP
 	@cd iac/gcp && terraform destroy -auto-approve
 
-aws-up: ## Despliega en AWS (verifica budget antes)
-	@bash scripts/check-budget-aws.sh && cd iac/aws && terraform init && terraform apply
-
-aws-down: ## Destruye todo en AWS - CORRER SIEMPRE AL TERMINAR
-	@cd iac/aws && terraform destroy -auto-approve
 
 clean: local-down ## Limpia todo lo local
 	@docker system prune -f

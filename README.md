@@ -52,7 +52,6 @@ los tres pilares de telemetría, benchmark de overhead y despliegue en GCP .
 | k6 | 0.50+ | `brew install k6` |
 | Terraform | 1.9+ | `brew tap hashicorp/tap && brew install hashicorp/tap/terraform` |
 | gcloud CLI | 500+ | `brew install --cask gcloud-cli` |
-| AWS CLI | v2 | `brew install awscli` |
 | jq, make | — | `brew install jq make` |
 
 Verificación e instalación automáticas:
@@ -85,8 +84,6 @@ make local-down    # baja todo y borra volúmenes
 
 make gcp-up        # despliega en GCP (verifica budget primero)
 make gcp-down      # destruye GCP
-make aws-up        # despliega en AWS
-make aws-down      # destruye AWS — CORRER SIEMPRE AL TERMINAR
 ```
 
 Mientras el Collector no exista, la Fase 1 se valida aparte: PostgreSQL en
