@@ -274,12 +274,107 @@ Honestidad sobre los límites, que es parte del criterio:
 
 ---
 
+## Benchmark en Cloud Run
+
+El benchmark principal es el local, por las razones metodológicas que se
+explican abajo. Se repitió además en GCP para cubrir los dos entornos, con un
+arnés distinto —`benchmark/run-benchmark-gcp.sh`— que neutraliza tres trampas
+específicas de la nube.
+
+### Por qué no vale copiar el arnés local
+
+**La red.** Hasta `us-central1` hay unos 182 ms de latencia medidos con la
+instancia caliente, **seis veces el efecto que se quiere medir** (+32 ms). Por
+eso el arnés de GCP **no cronometra desde k6**: lee `request_latencies`, que
+Google mide en su propio borde. k6 solo genera carga. La diferencia es enorme:
+k6 reportaba ~250 ms por petición y la medición del lado del servidor da 74 ms.
+
+**El autoescalado.** Si el número de instancias cambia entre escenarios, el
+rendimiento deja de ser comparable. El arnés fija `min = max = 1` durante la
+medición y restaura la escala a cero al terminar, incluso si se interrumpe.
+
+**La pérdida de telemetría, que es la trampa peligrosa.** Cloud Run recicla
+instancias y bajo ráfagas se pierden lotes (ADR-003). Si el escenario
+instrumentado pierde spans, hace **menos trabajo** y sale artificialmente más
+rápido: un sesgo **a favor** de la instrumentación, que es el peor error posible
+aquí. Con la instancia fijada el problema desaparece, y el análisis publica
+además el conteo de peticiones atendidas por escenario para que el sesgo sea
+verificable y no una promesa.
+
+### Un fallo que se repitió
+
+La primera ejecución en GCP dio **más de 8 000 errores inesperados por corrida**.
+La causa fue la misma que ya se había documentado para el entorno local: **el
+inventario se agotaba** y todo pasaba a responder 409.
+
+En local se resuelve reseteando el stock con `docker exec` entre corridas. En
+Cloud Run no hay `docker exec`, así que la semilla tiene que nacer grande: se
+sustituyó `init.sql` por un `init.sh` con un multiplicador configurable, que en
+la nube vale 100 000 y en local sigue valiendo 1 —de modo que `SKU-010` conserva
+sus 5 unidades y se puede seguir provocando un 409 a voluntad—.
+
+Que el mismo fallo apareciera dos veces, en dos entornos, con el problema ya
+documentado, dice algo útil: **una condición previa que no está automatizada se
+vuelve a olvidar**. En el arnés local el reseteo es una función del script; en el
+de la nube ahora es una propiedad de la imagen.
+
+### Resultados en Cloud Run
+
+Sello `20260823-190929`. **Seis corridas, todas válidas**: 0 errores inesperados.
+Perfil de 15 usuarios virtuales y meseta de 120 s, más corto que el local porque
+la red limita la carga que se puede generar desde un portátil.
+
+| Escenario | p50 | p95 | p99 | CPU | Memoria | Throughput |
+|---|---|---|---|---|---|---|
+| A — baseline | 74,0 ms | 137,7 ms | 201,5 ms | 18,4 % | 29,3 % | 47,1 rps |
+| B — instrumentado | 90,0 ms | 158,6 ms | 211,1 ms | 19,3 % | 32,2 % | 39,2 rps |
+
+| Métrica | Δ absoluto | Δ % |
+|---|---|---|
+| Latencia p50 | +15,9 ms | **+21,6 %** |
+| Latencia p95 | +21,0 ms | +15,2 % |
+| Latencia p99 | +9,6 ms | +4,8 % |
+| CPU media | +1,0 pp | +5,3 % |
+| Memoria media | +2,9 pp | +10,0 % |
+| Throughput | −7,9 rps | **−16,8 %** |
+
+### Los dos entornos coinciden
+
+| Métrica | Local | Cloud Run |
+|---|---|---|
+| Latencia p50 | +23,6 % | **+21,6 %** |
+| Throughput | −19,7 % | **−16,8 %** |
+| Memoria | +7 % | **+10 %** |
+
+Que dos entornos con hardware, sistema operativo y perfil de carga distintos den
+la misma magnitud es la mejor validación disponible del resultado: **el
+sobrecosto de instrumentar es una propiedad del SDK, no del entorno de pruebas.**
+
+El p99 se desvía (+4,8 % frente a +34 % en local) y tiene explicación: en la nube
+el sistema **no estaba saturado** —18 % de CPU frente al 98,8 % del local—, así
+que no hay cola que amplifique la cola de la distribución. Es la misma conclusión
+del apartado anterior vista desde el otro lado: **el efecto sobre el p99 depende
+de la utilización, no del SDK**, mientras que el costo de servicio no.
+
+### Una cifra tomada de dos fuentes distintas, a propósito
+
+La latencia, la CPU y la memoria se leen de las métricas del lado del servidor.
+El **throughput no**: la métrica agregada de Cloud Run reportaba −1,2 % donde el
+conteo real de checkouts era **−16,8 %**, porque agrega todas las rutas e
+incluye las sondas de salud. Se usa el conteo de k6 dividido por la duración,
+que es inequívoco. Cada número viene de la fuente en la que es fiable.
+
 ## Cómo reproducirlo
 
 ```bash
-make local-up                    # 8 contenedores healthy
-make bench                       # ~50 min: 2 escenarios x 3 corridas
-python3 benchmark/analyze.py     # genera las tablas de arriba
+# entorno local
+make local-up                        # 8 contenedores healthy
+make bench                           # ~50 min: 2 escenarios x 3 corridas
+python3 benchmark/analyze.py         # genera las tablas de arriba
+
+# Cloud Run
+make bench-gcp                       # ~25 min, fija y restaura las instancias
+python3 benchmark/analyze-gcp.py     # lee las metricas del lado del servidor
 ```
 
 Para validar el tooling sin gastar 50 minutos:

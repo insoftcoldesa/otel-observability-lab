@@ -9,7 +9,7 @@
 | R1 Instrumentación OTel SDK | ✅ **Completo** | T1.1–T1.8 + 3 capturas en `docs/evidencias/` | — |
 | R2 Collector en cloud | ✅ **Local + GCP** | 8 contenedores healthy en local · Cloud Run con Collector sidecar, traza de **16 spans** en Cloud Trace | alcance reducido a 1 nube (ADR-002) |
 | R3 Correlación cross-signal | ✅ **Completo** | 5 capturas sobre el mismo `trace_id` `d0d3061…`; dashboard de 6 paneles | — |
-| R4 Benchmark de overhead | ✅ **Completo** | 6/6 corridas válidas; `benchmark/results/overhead-analysis.md` con las 3 dimensiones | — |
+| R4 Benchmark de overhead | ✅ **Completo** | Local: 6/6 corridas válidas con las 3 dimensiones. **Y repetido en Cloud Run** con arnés propio | — |
 | R5 IaC y calidad del repo | 🟨 Casi | Terraform de GCP **aplicado**, 3 ADRs, wiki, reporte APA 7 | falta reflejar la nube en el reporte |
 
 Leyenda: ⬜ no iniciado · 🟨 en curso · ✅ completo con evidencia · 🟥 bloqueado
@@ -394,6 +394,41 @@ del dashboard de la Fase 3 sirven en los dos entornos sin cambios**.
 Bajo ráfagas sin pausa se siguen perdiendo lotes, porque las instancias se crean
 y destruyen. Para capturar evidencia hay que espaciar el tráfico. En local, con
 los mismos servicios y 50 usuarios concurrentes, la entrega fue del 100 %.
+
+## Benchmark en Cloud Run — complemento de R4
+
+Se repitió el benchmark en GCP para cubrir los dos entornos. **No se reutilizó el
+arnés local**: medir overhead sobre Cloud Run desde un portátil tiene tres
+trampas, y las tres invalidan el resultado si se ignoran.
+
+| Trampa | Efecto si se ignora | Cómo se neutraliza |
+|---|---|---|
+| **La red** | 182 ms de latencia, 6× el efecto a medir | Se leen las métricas del **lado del servidor** (`request_latencies`); k6 solo genera carga |
+| **El autoescalado** | El rendimiento deja de ser comparable | `min = max = 1` durante la medición, y restauración a cero al terminar |
+| **La pérdida de telemetría** | El escenario instrumentado hace **menos trabajo** y sale más rápido: sesgo **a favor** de instrumentar | Instancia fijada, y el análisis publica el conteo de peticiones por escenario |
+
+La tercera es la peligrosa: produciría un número halagüeño y falso.
+
+**La diferencia entre medir bien y medir mal se ve en un dato**: k6 reportaba
+~250 ms por petición; la medición del lado del servidor da **74 ms**. Los otros
+176 ms eran la red.
+
+### El mismo fallo, dos veces
+
+La primera ejecución en GCP dio **más de 8 000 errores inesperados por corrida**,
+por la misma causa ya documentada en local: **el inventario se agotaba** y todo
+respondía 409.
+
+En local se resuelve reseteando el stock con `docker exec`. En Cloud Run no hay
+`docker exec`, así que la semilla debe nacer grande: se sustituyó `init.sql` por
+un `init.sh` con multiplicador configurable, que vale 100 000 en la nube y 1 en
+local —de modo que `SKU-010` conserva sus 5 unidades y se puede seguir
+provocando un 409 a voluntad—.
+
+Que reapareciera el mismo fallo, con el problema ya documentado, deja una
+lección: **una condición previa que no está automatizada se vuelve a olvidar**.
+En el arnés local el reseteo es una función del script; en el de la nube pasó a
+ser una propiedad de la imagen.
 
 ## Pendientes inmediatos (D1, lunes 17)
 

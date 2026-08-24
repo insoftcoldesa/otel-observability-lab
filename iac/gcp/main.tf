@@ -180,6 +180,14 @@ resource "google_cloud_run_v2_service" "service_b" {
         name  = "PGDATA"
         value = "/var/lib/postgresql/data/pgdata"
       }
+      # Semilla amplificada: el benchmark hace decenas de miles de checkouts y
+      # cada uno descuenta inventario. Sin esto el stock se agota en segundos y
+      # la prueba mide la ruta de error (409) en vez del checkout. En local se
+      # resetea por `docker exec` entre corridas; aqui no hay `docker exec`.
+      env {
+        name  = "SEED_MULTIPLIER"
+        value = "100000"
+      }
 
       volume_mounts {
         name       = "pgdata"
