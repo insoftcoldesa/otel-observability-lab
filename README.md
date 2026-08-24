@@ -2,17 +2,7 @@
 
 Laboratorio de la asignatura **MASS – OBAP20264**, Maestría en Arquitectura de
 Software. Dos microservicios instrumentados con OpenTelemetry, OTel Collector,
-los tres pilares de telemetría, benchmark de overhead y despliegue en GCP y AWS.
-
-**Entrega: 25 de agosto de 2026.**
-
-| | |
-|---|---|
-| Equipo | Fredy Pulido · Myriam Martínez · Juan Francisco Pérez · Nicolás Torres |
-| Plan de trabajo | [`docs/planeacion/CALENDARIO_ENTREGA_25AGO.md`](docs/planeacion/CALENDARIO_ENTREGA_25AGO.md) |
-| Detalle de tareas | [`docs/planeacion/CRONOGRAMA_LAB_OTEL.md`](docs/planeacion/CRONOGRAMA_LAB_OTEL.md) |
-| Estado en vivo | [`docs/PROGRESO.md`](docs/PROGRESO.md) |
-| **Wiki: cómo se construye cada fase paso a paso** | [`docs/wiki/Home.md`](docs/wiki/Home.md) |
+los tres pilares de telemetría, benchmark de overhead y despliegue en GCP .
 
 ---
 
@@ -82,19 +72,6 @@ Este es un laboratorio: **todo debe caber en el free tier.**
 Cloud Run (2 M solicitudes/mes), Cloud Logging 50 GiB/mes, Artifact Registry 0.5 GB.
 Se usa **Cloud Run, no GKE** — GKE solo regala la tarifa del plano de control.
 
-**AWS.** El free tier cambió en julio de 2025: cuentas nuevas reciben
-**$100 + $100 en créditos por 6 meses**, no las 750 h clásicas.
-**ECS Fargate no es "always free"**: consume crédito. Por eso se despliega en una
-ventana corta y se destruye el mismo día.
-
-Antes del primer `terraform apply`:
-
-- [ ] Proyecto GCP dedicado + **budget de $5 USD** con alertas 50/90/100 %
-- [ ] **AWS Budget de $5 USD** + alertas de uso de free tier
-- [ ] `gcloud auth login && gcloud auth application-default login`
-- [ ] `aws configure`
-- [ ] Confirmar: sin NAT Gateway, sin ALB, sin IPs estáticas, log groups con retención 3 días
-
 ---
 
 ## Uso
@@ -112,7 +89,7 @@ make aws-up        # despliega en AWS
 make aws-down      # destruye AWS — CORRER SIEMPRE AL TERMINAR
 ```
 
-Mientras el Collector no exista (Fase 2), la Fase 1 se valida aparte: PostgreSQL en
+Mientras el Collector no exista, la Fase 1 se valida aparte: PostgreSQL en
 Docker y los dos servicios con `uv`, exportando los spans a consola.
 
 ```bash
@@ -124,7 +101,7 @@ bash scripts/dev-fase1.sh logs    # líneas JSON con trace_id y span_id
 bash scripts/dev-fase1.sh down
 ```
 
-Inyección de fallos (T1.8), para generar trazas de error y trazas lentas:
+Inyección de fallos, para generar trazas de error y trazas lentas:
 
 ```bash
 curl -X POST 'localhost:8000/checkout?fail=true'  -H 'Content-Type: application/json' -d @carrito.json
@@ -147,19 +124,17 @@ curl -X POST 'localhost:8000/checkout?delay=750'  -H 'Content-Type: application/
 
 | Criterio | Dónde está la evidencia |
 |---|---|
-| R1 Instrumentación OTel SDK | `services/*/telemetry.py`, `docs/evidencias/R1-*` |
-| R2 Collector: config y despliegue | `collector/*.yaml`, `iac/`, `docs/evidencias/R2-*` |
-| R3 Correlación cross-signal | `docs/evidencias/R3-01-traza.png`, `R3-02-log.png`, `R3-03-exemplar.png` |
-| R4 Benchmark de overhead | `benchmark/results/overhead-analysis.md` |
-| R5 IaC y calidad del repo | `iac/`, este README, `docs/adr/`, `docs/reporte-tecnico.pdf` |
+| Instrumentación OTel SDK | `services/*/telemetry.py`, `docs/evidencias/R1-*` |
+| Collector: config y despliegue | `collector/*.yaml`, `iac/`, `docs/evidencias/R2-*` |
+| Correlación cross-signal | `docs/evidencias/R3-01-traza.png`, `R3-02-log.png`, `R3-03-exemplar.png` |
+| Benchmark de overhead | `benchmark/results/overhead-analysis.md` |
+| IaC y calidad del repo | `iac/`, este README, `docs/reporte-tecnico.pdf` |
 
-Checklist completo: `docs/CHECKLIST-RUBRICA.md` (se genera en la Fase 7).
 
 ---
 
 ## Troubleshooting
 
-*(se completa durante el laboratorio — Fase 7, T7.3)*
 
 | Síntoma | Causa | Solución |
 |---|---|---|
