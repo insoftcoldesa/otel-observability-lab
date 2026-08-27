@@ -49,6 +49,18 @@ verificar_limpio() { # $1 = contenedor objetivo
   verde "   [verificado] $1 sin reglas de caos: ${salida:-sin qdisc}"
 }
 
+# El inventario se agota bajo carga y todo pasa a responder 409, lo que
+# CONFUNDE el fallo inyectado con un fallo de negocio. Ya invalido el benchmark
+# local y despues el de GCP: es la tercera vez que aparece, asi que deja de ser
+# responsabilidad de cada experimento y pasa a la biblioteca comun. Ningun
+# experimento puede olvidarlo porque ninguno lo invoca a mano.
+resetear_stock() {
+  docker exec otel-lab-postgres psql -U otel -d inventory -q -c \
+    "UPDATE inventory SET stock = 100000000, updated_at = now();" >/dev/null 2>&1 \
+    && verde "   [estado estable] inventario repuesto" \
+    || rojo "   !! no se pudo reponer el inventario: los 409 falsearan el resultado"
+}
+
 esperar_con_cuenta() { # $1 = segundos
   local s="$1"
   while [ "$s" -gt 0 ]; do

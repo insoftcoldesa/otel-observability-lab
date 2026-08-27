@@ -29,6 +29,16 @@ _MAXCONN_POR_DEFECTO = _HILOS_SINCRONOS_STARLETTE + 5
 _pool: pool.ThreadedConnectionPool | None = None
 
 
+def _maxconn() -> int:
+    """Tamano del pool, tolerante a un valor vacio o no numerico.
+
+    Docker Compose pasa cadena vacia cuando la variable no esta definida en el
+    entorno, y un int("") reventaria al arrancar. Se cae al valor por defecto.
+    """
+    crudo = os.environ.get("POSTGRES_POOL_MAX", "").strip()
+    return int(crudo) if crudo.isdigit() and int(crudo) > 0 else _MAXCONN_POR_DEFECTO
+
+
 def _dsn_kwargs() -> dict:
     return {
         "host": os.environ.get("POSTGRES_HOST", "localhost"),
@@ -44,7 +54,7 @@ def init_pool() -> None:
     if _pool is None:
         _pool = pool.ThreadedConnectionPool(
             minconn=1,
-            maxconn=int(os.environ.get("POSTGRES_POOL_MAX", _MAXCONN_POR_DEFECTO)),
+            maxconn=_maxconn(),
             **_dsn_kwargs(),
         )
 

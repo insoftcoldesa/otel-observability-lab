@@ -64,10 +64,14 @@ curl -sf -m 10 http://localhost:3000/api/health >/dev/null 2>&1 \
 
 echo
 echo "-- Estado estable: sin trafico no hay experimento que medir"
-docker exec otel-lab-postgres psql -U otel -d inventory -tAc \
-  "SELECT count(*) FROM inventory WHERE stock > 1000;" 2>/dev/null | grep -q '^10$' \
-  && ok "inventario con stock suficiente" \
-  || rojo "  [i]   stock bajo: corre 'make local-down && make local-up' antes de empezar"
+# La siembra local son 100 unidades a proposito (SKU-010 con 5 permite provocar
+# un 409). No se exige stock alto aqui: cada experimento lo repone al arrancar.
+if docker exec otel-lab-postgres psql -U otel -d inventory -tAc \
+     "SELECT count(*) FROM inventory;" 2>/dev/null | grep -q '^10$'; then
+  ok "inventario sembrado con los 10 SKU (cada experimento lo repone al arrancar)"
+else
+  malo "el inventario no tiene los 10 SKU. Corre: make local-down && make local-up"
+fi
 
 echo
 if [ "$FALLOS" -eq 0 ]; then

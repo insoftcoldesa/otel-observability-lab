@@ -34,6 +34,8 @@ azul "=== EXPERIMENTO 1 · latencia de red (${RETARDO_MS} ms) sobre ${OBJETIVO} 
 # fallara en medio, la regla quedaria puesta indefinidamente.
 trap 'echo; limpiar_netem "$OBJETIVO"; verificar_limpio "$OBJETIVO" || true' EXIT INT TERM
 
+resetear_stock
+
 echo "==> Estado previo"
 instantanea_slis "antes"
 

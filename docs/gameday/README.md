@@ -4,9 +4,27 @@
 
 | Entregable | Estado |
 |---|---|
-| `Plan-Game-Day-MASS-OBAP20264.docx` | 🟨 Diseño completo · ejecución y reflexión PENDIENTES |
-| Anexo de evidencias (documento aparte) | ⬜ se produce el miércoles |
-| Instrumental de ejecución (`chaos/`) | ✅ construido y verificado |
+| `Plan-Game-Day-MASS-OBAP20264.docx` | ✅ **5 páginas** · diseño, ejecución y reflexión |
+| `Anexo-Evidencias-Game-Day.docx` | ✅ **4 páginas** · salidas literales de consola |
+| Instrumental (`chaos/`) | ✅ los 3 experimentos ejecutados |
+
+## Resultados
+
+| Hipótesis | Veredicto | Dato |
+|---|---|---|
+| 1 · Latencia | Parcialmente refutada | p95 de 23,9 a **487,5 ms**, más del doble de lo inyectado |
+| 2 · Recursos | Parcialmente refutada | 736 excepciones, disponibilidad 1,00 → **0,57**; pero los logs **no** atribuyen la causa |
+| 3 · Partición | Confirmada | **152 checkouts correctos** sin Collector |
+
+**Dos debilidades sistémicas encontradas:**
+
+1. **Sin reutilización de conexiones HTTP.** `requests.post()` abre una conexión
+   nueva por llamada, así que bajo latencia el handshake paga el retardo dos
+   veces más: impacto ×2,5. Remediación: `requests.Session` con pooling.
+2. **Las excepciones no controladas pierden trazabilidad.** Las 736 excepciones
+   nunca llegaron a Loki — solo el mensaje genérico, sin `trace_id` ni traceback.
+   El sistema correlaciona los errores que sabe manejar y pierde los inesperados,
+   que son los que más falta hace investigar.
 
 ## Para ejecutar el miércoles
 
@@ -45,9 +63,9 @@ agotamiento del pool ocurrió de verdad en el benchmark de la actividad anterior
 sirve para comprobar que la corrección aguanta, y así se declara en el documento:
 formular una hipótesis fingiendo desconocer el resultado sería deshonesto.
 
-## Pendiente de decidir antes del miércoles
+## Sobre la extensión
 
-El documento está en **6 páginas** y la rúbrica pide **4–5**. Los resultados de
-la ejecución añadirán alrededor de una página más. Habrá que recortar: las
-opciones son comprimir el apartado de arquitectura, fundir dos tablas o reducir
-las referencias.
+El plan quedó en **5 páginas**, dentro del 4–5 que pide la rúbrica, sin recortar
+ningún criterio puntuable. La clave fue revisar una suposición propia: el
+enunciado **no pide formato APA**, solo 4–5 páginas y redacción técnica. Con
+doble espacio los 20 criterios no caben sin mutilarlos; con interlineado 1,5 sí.

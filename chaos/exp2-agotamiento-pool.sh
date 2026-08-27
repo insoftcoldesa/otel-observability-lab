@@ -53,6 +53,8 @@ restaurar_pool() {
 }
 trap restaurar_pool EXIT INT TERM
 
+resetear_stock
+
 echo "==> Estado previo"
 instantanea_slis "antes"
 

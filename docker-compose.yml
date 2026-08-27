@@ -235,6 +235,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-inventory}
       POSTGRES_USER: ${POSTGRES_USER:-otel}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-otel_lab_2026}
+      # Se declara vacia a proposito para que el experimento 2 del Game Day
+      # pueda inyectar un pool reducido sin editar este fichero. Vacia significa
+      # "usa el valor por defecto del codigo" (40 hilos de Starlette + 5).
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-}
       PORT: "8001"
     ports:
       - "8001:8001"

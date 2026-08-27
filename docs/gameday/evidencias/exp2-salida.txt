@@ -1,0 +1,118 @@
+=== EXPERIMENTO 2 · pool reducido a 5 conexiones ===
+   [estado estable] inventario repuesto
+==> Estado previo
+   --- SLIs [antes] ---
+      disponibilidad   1.000
+      p95 (ms)         34.375
+      tasa error       0.000
+      throughput       0.556
+
+==> Reduciendo el pool a 5 y reiniciando service-b
+   POSTGRES_POOL_MAX en el contenedor: 5
+
+==> Aplicando concurrencia (20 peticiones simultaneas)
+
+   experimento en curso,  90 s restantes 
+   experimento en curso,  89 s restantes 
+   experimento en curso,  88 s restantes 
+   experimento en curso,  87 s restantes 
+   experimento en curso,  86 s restantes 
+   experimento en curso,  85 s restantes 
+   experimento en curso,  84 s restantes 
+   experimento en curso,  83 s restantes 
+   experimento en curso,  82 s restantes 
+   experimento en curso,  81 s restantes 
+   experimento en curso,  80 s restantes 
+   experimento en curso,  79 s restantes 
+   experimento en curso,  78 s restantes 
+   experimento en curso,  77 s restantes 
+   experimento en curso,  76 s restantes 
+   experimento en curso,  75 s restantes 
+   experimento en curso,  74 s restantes 
+   experimento en curso,  73 s restantes 
+   experimento en curso,  72 s restantes 
+   experimento en curso,  71 s restantes 
+   experimento en curso,  70 s restantes 
+   experimento en curso,  69 s restantes 
+   experimento en curso,  68 s restantes 
+   experimento en curso,  67 s restantes 
+   experimento en curso,  66 s restantes 
+   experimento en curso,  65 s restantes 
+   experimento en curso,  64 s restantes 
+   experimento en curso,  63 s restantes 
+   experimento en curso,  62 s restantes 
+   experimento en curso,  61 s restantes 
+   experimento en curso,  60 s restantes 
+   experimento en curso,  59 s restantes 
+   experimento en curso,  58 s restantes 
+   experimento en curso,  57 s restantes 
+   experimento en curso,  56 s restantes 
+   experimento en curso,  55 s restantes 
+   experimento en curso,  54 s restantes 
+   experimento en curso,  53 s restantes 
+   experimento en curso,  52 s restantes 
+   experimento en curso,  51 s restantes 
+   experimento en curso,  50 s restantes 
+   experimento en curso,  49 s restantes 
+   experimento en curso,  48 s restantes 
+   experimento en curso,  47 s restantes 
+   experimento en curso,  46 s restantes 
+   experimento en curso,  45 s restantes 
+   experimento en curso,  44 s restantes 
+   experimento en curso,  43 s restantes 
+   experimento en curso,  42 s restantes 
+   experimento en curso,  41 s restantes 
+   experimento en curso,  40 s restantes 
+   experimento en curso,  39 s restantes 
+   experimento en curso,  38 s restantes 
+   experimento en curso,  37 s restantes 
+   experimento en curso,  36 s restantes 
+   experimento en curso,  35 s restantes 
+   experimento en curso,  34 s restantes 
+   experimento en curso,  33 s restantes 
+   experimento en curso,  32 s restantes 
+   experimento en curso,  31 s restantes 
+   experimento en curso,  30 s restantes 
+   experimento en curso,  29 s restantes 
+   experimento en curso,  28 s restantes 
+   experimento en curso,  27 s restantes 
+   experimento en curso,  26 s restantes 
+   experimento en curso,  25 s restantes 
+   experimento en curso,  24 s restantes 
+   experimento en curso,  23 s restantes 
+   experimento en curso,  22 s restantes 
+   experimento en curso,  21 s restantes 
+   experimento en curso,  20 s restantes 
+   experimento en curso,  19 s restantes 
+   experimento en curso,  18 s restantes 
+   experimento en curso,  17 s restantes 
+   experimento en curso,  16 s restantes 
+   experimento en curso,  15 s restantes 
+   experimento en curso,  14 s restantes 
+   experimento en curso,  13 s restantes 
+   experimento en curso,  12 s restantes 
+   experimento en curso,  11 s restantes 
+   experimento en curso,  10 s restantes 
+   experimento en curso,   9 s restantes 
+   experimento en curso,   8 s restantes 
+   experimento en curso,   7 s restantes 
+   experimento en curso,   6 s restantes 
+   experimento en curso,   5 s restantes 
+   experimento en curso,   4 s restantes 
+   experimento en curso,   3 s restantes 
+   experimento en curso,   2 s restantes 
+   experimento en curso,   1 s restantes 
+   experimento completado                    
+
+==> Estado durante el fallo
+   --- SLIs [durante] ---
+      disponibilidad   0.565
+      p95 (ms)         71.729
+      tasa error       0.435
+      throughput       18.711
+
+==> Excepciones de pool registradas por service-b
+   pool exhausted: 736
+
+   [rollback] restaurando el pool a su valor por defecto
+   [verificado] service-b sano · POSTGRES_POOL_MAX = 

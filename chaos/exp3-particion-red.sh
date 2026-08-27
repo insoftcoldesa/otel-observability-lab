@@ -45,6 +45,8 @@ aplicar_particion() {
 
 trap 'echo; limpiar_netem "$OBJETIVO"; verificar_limpio "$OBJETIVO" || true' EXIT INT TERM
 
+resetear_stock
+
 echo "==> Estado previo"
 instantanea_slis "antes"
 
