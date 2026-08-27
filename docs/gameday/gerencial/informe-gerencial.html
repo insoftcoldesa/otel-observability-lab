@@ -1,0 +1,414 @@
+<title>Game Day de resiliencia</title>
+<style>
+  :root{
+    --ground:#F1F4F6; --surface:#FFFFFF; --surface-2:#E9EEF1;
+    --ink:#122029; --ink-2:#33474F; --muted:#5B6C77;
+    --rule:#DBE3E8; --rule-2:#C3D0D7;
+    --estable:#2a78d6; --fallo:#eb6834;
+    --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
+    --good-bg:#E3F3E3; --critical-bg:#F8E3E3; --warning-bg:#FDF1D9;
+    --shadow:0 1px 2px rgba(18,32,41,.05), 0 12px 32px -18px rgba(18,32,41,.28);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0E171D; --surface:#16232B; --surface-2:#1E2F38;
+      --ink:#E8EFF3; --ink-2:#C2D2DA; --muted:#8CA1AC;
+      --rule:#263A45; --rule-2:#35505D;
+      --estable:#3987e5; --fallo:#d95926;
+      --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
+      --good-bg:#123016; --critical-bg:#361B1B; --warning-bg:#332715;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px -18px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0E171D; --surface:#16232B; --surface-2:#1E2F38;
+    --ink:#E8EFF3; --ink-2:#C2D2DA; --muted:#8CA1AC;
+    --rule:#263A45; --rule-2:#35505D;
+    --estable:#3987e5; --fallo:#d95926;
+    --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
+    --good-bg:#123016; --critical-bg:#361B1B; --warning-bg:#332715;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px -18px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground); color:var(--ink); margin:0;
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:60rem;margin:0 auto;padding:0 1.5rem 6rem}
+  .mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+        font-variant-numeric:tabular-nums}
+  .eyebrow{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+
+  h1{font-size:clamp(2.1rem,5.5vw,3.4rem);line-height:1.02;letter-spacing:-.035em;
+     font-weight:800;margin:.6rem 0 0;text-wrap:balance}
+  h2{font-size:clamp(1.3rem,2.6vw,1.7rem);line-height:1.15;letter-spacing:-.02em;
+     font-weight:750;margin:0;text-wrap:balance}
+  h3{font-size:1.02rem;font-weight:700;margin:0;letter-spacing:-.01em}
+  p{margin:0}
+
+  header{padding:4rem 0 0}
+  .veredicto{
+    margin-top:1.6rem;font-size:clamp(1.1rem,2.2vw,1.35rem);line-height:1.45;
+    color:var(--ink-2);max-width:44rem
+  }
+  .veredicto b{color:var(--ink);font-weight:700}
+
+  /* KPI ------------------------------------------------------------------ */
+  .kpis{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));margin-top:2.5rem}
+  .kpi{background:var(--surface);border:1px solid var(--rule);border-radius:4px;
+       padding:1.15rem 1.25rem;box-shadow:var(--shadow)}
+  .kpi .cifra{font-size:2.5rem;font-weight:800;letter-spacing:-.045em;line-height:1;
+              margin:.5rem 0 .35rem;font-variant-numeric:tabular-nums}
+  .kpi .pie{font-size:.85rem;color:var(--muted);line-height:1.35}
+
+  /* Secciones ------------------------------------------------------------ */
+  section{margin-top:4rem}
+  .sechead{border-top:1px solid var(--rule-2);padding-top:1.1rem;margin-bottom:1.5rem;
+           display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap}
+  .sechead .num{font-family:ui-monospace,Menlo,monospace;font-size:.8rem;font-weight:700;
+                color:var(--estable)}
+
+  .tarjeta{background:var(--surface);border:1px solid var(--rule);border-radius:4px;
+           padding:1.4rem 1.5rem;box-shadow:var(--shadow)}
+  .stack{display:flex;flex-direction:column;gap:1.1rem}
+
+  .hipotesis{border-left:3px solid var(--rule-2);padding:.1rem 0 .1rem 1rem;
+             color:var(--ink-2);font-size:.95rem}
+  .hipotesis b{color:var(--ink)}
+
+  /* Chips ---------------------------------------------------------------- */
+  .chip{display:inline-flex;align-items:center;gap:.42rem;font-family:ui-monospace,Menlo,monospace;
+    font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;font-weight:700;
+    padding:.26rem .6rem;border-radius:2px;white-space:nowrap}
+  .chip-ok{background:var(--good-bg);color:var(--good)}
+  .chip-ref{background:var(--warning-bg);color:var(--warning)}
+  .chip-mal{background:var(--critical-bg);color:var(--critical)}
+
+  /* Gráficos ------------------------------------------------------------- */
+  figure{margin:0}
+  .grafico{overflow-x:auto}
+  svg{display:block;max-width:100%;height:auto}
+  .barra{transition:opacity .12s}
+  .barra:hover{opacity:.78;cursor:default}
+  .rot{font-family:ui-sans-serif,-apple-system,sans-serif;font-size:12.5px;fill:var(--ink-2)}
+  .val{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:700;
+       fill:var(--ink);font-variant-numeric:tabular-nums}
+  .eje{stroke:var(--rule);stroke-width:1}
+  .leyenda{display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.83rem;color:var(--ink-2);margin-top:.2rem}
+  .leyenda span{display:inline-flex;align-items:center;gap:.4rem}
+  .sw{width:11px;height:11px;border-radius:2px;flex:none}
+
+  .nota{background:var(--surface-2);border-radius:3px;padding:.95rem 1.1rem;
+        font-size:.9rem;color:var(--ink-2);line-height:1.5}
+  .nota b{color:var(--ink)}
+
+  /* Hallazgos ------------------------------------------------------------ */
+  .hallazgo{background:var(--surface);border:1px solid var(--rule);border-radius:4px;
+            border-top:3px solid var(--critical);padding:1.4rem 1.5rem;box-shadow:var(--shadow)}
+  .remedio{margin-top:1rem;background:var(--good-bg);border-radius:3px;padding:.85rem 1.05rem;
+           font-size:.9rem;color:var(--ink-2)}
+  .remedio b{color:var(--good)}
+
+  .tablawrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:32rem}
+  th,td{text-align:left;padding:.7rem .9rem;border-bottom:1px solid var(--rule)}
+  thead th{background:var(--surface-2);color:var(--muted);font-family:ui-monospace,Menlo,monospace;
+    font-size:.67rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  td.n{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;text-align:right}
+
+  footer{margin-top:4.5rem;border-top:1px solid var(--rule);padding-top:1.4rem;
+         color:var(--muted);font-size:.83rem}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Game Day · 26 de agosto de 2026 · MASS OBAP20264</p>
+  <h1>Rompimos el sistema a propósito. Esto es lo que aprendimos.</h1>
+  <p class="veredicto">
+    Tres experimentos controlados sobre el laboratorio de observabilidad.
+    <b>Dos de las tres hipótesis resultaron equivocadas</b> — y ahí está el valor:
+    encontramos dos debilidades que nadie habría visto en operación normal.
+  </p>
+
+  <div class="kpis">
+    <div class="kpi">
+      <p class="eyebrow">Experimento 1</p>
+      <p class="cifra" style="color:var(--fallo)">×20</p>
+      <p class="pie">La latencia se multiplicó por veinte, más del doble de lo previsto</p>
+    </div>
+    <div class="kpi">
+      <p class="eyebrow">Experimento 2</p>
+      <p class="cifra" style="color:var(--fallo)">43%</p>
+      <p class="pie">De cada 100 compras, 43 fallaron al agotar las conexiones</p>
+    </div>
+    <div class="kpi">
+      <p class="eyebrow">Experimento 3</p>
+      <p class="cifra" style="color:var(--estable)">152</p>
+      <p class="pie">Compras atendidas sin ningún sistema de vigilancia activo</p>
+    </div>
+  </div>
+</header>
+
+<!-- 1 ------------------------------------------------------------------ -->
+<section>
+  <div class="sechead">
+    <span class="num">01</span>
+    <h2>¿Y si la red se pone lenta?</h2>
+    <span class="chip chip-ref">◆ Hipótesis refutada en parte</span>
+  </div>
+
+  <div class="stack">
+    <p class="hipotesis">
+      Esperábamos que añadir <b>200 ms</b> de retraso en la red subiera la latencia
+      <b>en esos mismos 200 ms</b>, sin afectar la disponibilidad.
+    </p>
+
+    <div class="tarjeta">
+      <h3>Lo que pasó: subió 20 veces, no lo previsto</h3>
+      <figure class="grafico" style="margin-top:1rem">
+        <svg viewBox="0 0 660 150" role="img" aria-label="Latencia p95: 23,9 ms en estado estable frente a 487,5 ms durante el fallo">
+          <line class="eje" x1="150" y1="14" x2="150" y2="132"/>
+          <!-- estable -->
+          <rect class="barra" x="150" y="24" width="20" height="34" rx="4" fill="var(--estable)"><title>Estado estable · 23,9 ms</title></rect>
+          <rect x="150" y="24" width="6" height="34" fill="var(--estable)"/>
+          <text class="rot" x="140" y="46" text-anchor="end">Estado estable</text>
+          <text class="val" x="182" y="46">23,9 ms</text>
+          <!-- durante -->
+          <rect class="barra" x="150" y="88" width="400" height="34" rx="4" fill="var(--fallo)"><title>Durante el fallo · 487,5 ms</title></rect>
+          <rect x="150" y="88" width="6" height="34" fill="var(--fallo)"/>
+          <text class="rot" x="140" y="110" text-anchor="end">Durante el fallo</text>
+          <text class="val" x="562" y="110">487,5 ms</text>
+        </svg>
+      </figure>
+      <div class="leyenda">
+        <span><i class="sw" style="background:var(--estable)"></i>Estado estable</span>
+        <span><i class="sw" style="background:var(--fallo)"></i>Durante el fallo inyectado</span>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <h3>Dónde se fue el tiempo</h3>
+      <p style="color:var(--ink-2);font-size:.92rem;margin-top:.4rem">
+        La traza descompone la petición más lenta. Casi todo el retraso se concentra
+        en un solo punto: la llamada de un servicio al otro.
+      </p>
+      <figure class="grafico" style="margin-top:1rem">
+        <svg viewBox="0 0 660 214" role="img" aria-label="Duración por etapa: la llamada entre servicios concentra 498 de los 507 milisegundos">
+          <line class="eje" x1="238" y1="10" x2="238" y2="196"/>
+          <g>
+            <rect class="barra" x="238" y="14" width="392" height="22" rx="4" fill="var(--estable)" opacity=".35"><title>Petición completa · 507,3 ms</title></rect>
+            <text class="rot" x="228" y="30" text-anchor="end">Petición completa</text>
+            <text class="val" x="638" y="30" text-anchor="end">507,3 ms</text>
+          </g>
+          <g>
+            <rect class="barra" x="238" y="48" width="385" height="22" rx="4" fill="var(--fallo)"><title>Llamada entre servicios · 498,2 ms — aquí está el retraso</title></rect>
+            <text class="rot" x="228" y="64" text-anchor="end" style="font-weight:700;fill:var(--ink)">Llamada entre servicios</text>
+            <text class="val" x="631" y="64" text-anchor="end">498,2 ms</text>
+          </g>
+          <g>
+            <rect class="barra" x="238" y="82" width="9" height="22" rx="3" fill="var(--estable)"><title>Servicio de inventario · 11,3 ms</title></rect>
+            <text class="rot" x="228" y="98" text-anchor="end">Servicio de inventario</text>
+            <text class="val" x="257" y="98">11,3 ms</text>
+          </g>
+          <g>
+            <rect class="barra" x="238" y="116" width="5" height="22" rx="2" fill="var(--estable)"><title>Reserva de stock · 4,3 ms</title></rect>
+            <text class="rot" x="228" y="132" text-anchor="end">Reserva de stock</text>
+            <text class="val" x="253" y="132">4,3 ms</text>
+          </g>
+          <g>
+            <rect class="barra" x="238" y="150" width="4" height="22" rx="2" fill="var(--estable)"><title>Consulta a base de datos · 2,5 ms</title></rect>
+            <text class="rot" x="228" y="166" text-anchor="end">Consulta a base de datos</text>
+            <text class="val" x="252" y="166">2,5 ms</text>
+          </g>
+          <g>
+            <rect class="barra" x="238" y="184" width="3" height="22" rx="2" fill="var(--estable)"><title>Escritura en base de datos · 0,5 ms</title></rect>
+            <text class="rot" x="228" y="200" text-anchor="end">Escritura en base de datos</text>
+            <text class="val" x="251" y="200">0,5 ms</text>
+          </g>
+        </svg>
+      </figure>
+      <div class="nota" style="margin-top:1rem">
+        <b>Cómo leerlo.</b> El fallo se quedó donde lo pusimos: la base de datos y el
+        segundo servicio siguieron respondiendo en milisegundos. Eso confirma que el
+        experimento fue controlado. Pero el retraso resultó <b>2,5 veces mayor</b> de
+        lo previsto, y esa diferencia destapó la primera debilidad.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 ------------------------------------------------------------------ -->
+<section>
+  <div class="sechead">
+    <span class="num">02</span>
+    <h2>¿Y si se agotan las conexiones a la base de datos?</h2>
+    <span class="chip chip-ref">◆ Hipótesis refutada en parte</span>
+  </div>
+
+  <div class="stack">
+    <p class="hipotesis">
+      Esperábamos que el sistema empezara a fallar <b>y que los registros nos dijeran
+      por qué</b>. Lo primero ocurrió. Lo segundo, no.
+    </p>
+
+    <div class="tarjeta">
+      <h3>El servicio se degradó como se esperaba</h3>
+      <figure class="grafico" style="margin-top:1rem">
+        <svg viewBox="0 0 660 190" role="img" aria-label="Disponibilidad cae del 100 al 56,5 por ciento; la tasa de error sube del 0 al 43,5 por ciento">
+          <text class="rot" x="0" y="16" style="font-weight:700;fill:var(--ink)">Compras completadas con éxito</text>
+          <line class="eje" x1="0" y1="26" x2="0" y2="86"/>
+          <rect class="barra" x="0" y="30" width="470" height="20" rx="4" fill="var(--estable)"><title>Estado estable · 100 %</title></rect>
+          <text class="val" x="480" y="45">100 %</text>
+          <rect class="barra" x="0" y="60" width="266" height="20" rx="4" fill="var(--fallo)"><title>Durante el fallo · 56,5 %</title></rect>
+          <text class="val" x="276" y="75">56,5 %</text>
+
+          <text class="rot" x="0" y="126" style="font-weight:700;fill:var(--ink)">Compras que fallaron</text>
+          <line class="eje" x1="0" y1="136" x2="0" y2="186"/>
+          <rect x="0" y="140" width="3" height="20" rx="1.5" fill="var(--estable)"><title>Estado estable · 0 %</title></rect>
+          <text class="val" x="13" y="155">0 %</text>
+          <rect class="barra" x="0" y="170" width="204" height="20" rx="4" fill="var(--fallo)"><title>Durante el fallo · 43,5 %</title></rect>
+          <text class="val" x="214" y="185">43,5 %</text>
+        </svg>
+      </figure>
+      <div class="leyenda">
+        <span><i class="sw" style="background:var(--estable)"></i>Estado estable</span>
+        <span><i class="sw" style="background:var(--fallo)"></i>Durante el fallo inyectado</span>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <h3>Pero el sistema de vigilancia no supo explicar por qué</h3>
+      <figure class="grafico" style="margin-top:1rem">
+        <svg viewBox="0 0 660 120" role="img" aria-label="736 fallos ocurrieron; cero llegaron al sistema central de registros">
+          <rect x="0" y="18" width="316" height="72" rx="4" fill="var(--fallo)" opacity=".16"/>
+          <text class="val" x="24" y="58" style="font-size:30px">736</text>
+          <text class="rot" x="24" y="78">fallos ocurrieron</text>
+
+          <path d="M336 54 L 356 54" stroke="var(--muted)" stroke-width="2"/>
+          <path d="M350 48 L 358 54 L 350 60" fill="none" stroke="var(--muted)" stroke-width="2"/>
+
+          <rect x="372" y="18" width="288" height="72" rx="4" fill="var(--critical)" opacity=".14"/>
+          <text class="val" x="396" y="58" style="font-size:30px;fill:var(--critical)">0</text>
+          <text class="rot" x="396" y="78">llegaron al registro central</text>
+        </svg>
+      </figure>
+      <div class="nota" style="margin-top:.6rem">
+        <b>Por qué importa.</b> Un responsable que investigara el incidente vería que
+        «algo falló», pero no <b>qué</b> ni <b>en qué compra</b>. El detalle técnico se
+        quedó dentro del servidor y nunca llegó al sistema donde se busca.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ------------------------------------------------------------------ -->
+<section>
+  <div class="sechead">
+    <span class="num">03</span>
+    <h2>¿Y si perdemos toda la vigilancia?</h2>
+    <span class="chip chip-ok">● Hipótesis confirmada</span>
+  </div>
+
+  <div class="stack">
+    <p class="hipotesis">
+      Esperábamos que cortar la telemetría <b>no afectara al negocio</b>: que se
+      perdiera la vista, no el servicio.
+    </p>
+
+    <div class="tarjeta">
+      <h3>El negocio siguió funcionando a ciegas</h3>
+      <figure class="grafico" style="margin-top:1rem">
+        <svg viewBox="0 0 660 128" role="img" aria-label="152 compras completadas mientras los cuatro indicadores no reportaban datos">
+          <rect x="0" y="14" width="316" height="100" rx="4" fill="var(--estable)" opacity=".14"/>
+          <text class="val" x="24" y="62" style="font-size:38px;fill:var(--estable)">152</text>
+          <text class="rot" x="24" y="84">compras completadas</text>
+          <text class="rot" x="24" y="102" style="fill:var(--muted)">durante el corte</text>
+
+          <rect x="344" y="14" width="316" height="100" rx="4" fill="var(--surface-2)"/>
+          <text class="val" x="368" y="62" style="font-size:38px;fill:var(--muted)">0 / 4</text>
+          <text class="rot" x="368" y="84">indicadores con datos</text>
+          <text class="rot" x="368" y="102" style="fill:var(--muted)">quedamos a ciegas</text>
+        </svg>
+      </figure>
+      <div class="nota" style="margin-top:.6rem">
+        <b>La trampa que casi nos engaña.</b> Durante el corte, los cuatro indicadores
+        marcaban «sin datos», que a primera vista parece una caída total del negocio.
+        No lo era. <b>No se puede medir el fallo del sistema de vigilancia usando ese
+        mismo sistema</b>: hizo falta mirar por fuera para saber que las compras
+        seguían entrando.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Hallazgos ---------------------------------------------------------- -->
+<section>
+  <div class="sechead">
+    <span class="num">04</span>
+    <h2>Las dos debilidades encontradas</h2>
+  </div>
+
+  <div class="stack">
+    <div class="hallazgo">
+      <span class="chip chip-mal">▲ Riesgo medio</span>
+      <h3 style="margin-top:.7rem">Cada llamada entre servicios abre una conexión nueva</h3>
+      <p style="color:var(--ink-2);font-size:.94rem;margin-top:.5rem">
+        Es como colgar y volver a marcar en cada frase de una conversación. Con la red
+        en buen estado no se nota. En cuanto se degrada, <b>cada llamada paga el retraso
+        dos veces más</b>: por eso el impacto fue 2,5 veces mayor de lo previsto.
+      </p>
+      <div class="remedio"><b>Remediación:</b> reutilizar la conexión entre llamadas.
+        Es un cambio acotado y reduciría el impacto a un solo viaje de ida y vuelta.</div>
+    </div>
+
+    <div class="hallazgo">
+      <span class="chip chip-mal">▲ Riesgo alto</span>
+      <h3 style="margin-top:.7rem">Los errores inesperados pierden su rastro</h3>
+      <p style="color:var(--ink-2);font-size:.94rem;margin-top:.5rem">
+        El sistema registra perfectamente los errores que sabe manejar, y
+        <b>pierde justo los inesperados</b> — que son los que de verdad hay que
+        investigar. Las 736 excepciones no dejaron ni identificador ni detalle en el
+        sistema central.
+      </p>
+      <div class="remedio"><b>Remediación:</b> capturar toda excepción no controlada
+        dentro del contexto de la petición antes de devolver el error. La corrección ya
+        existe para un caso puntual; se trata de generalizarla.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Datos -------------------------------------------------------------- -->
+<section>
+  <div class="sechead">
+    <span class="num">05</span>
+    <h2>Los datos, en una tabla</h2>
+  </div>
+  <div class="tablawrap">
+    <table>
+      <thead>
+        <tr><th>Experimento</th><th>Indicador</th><th class="n">Estable</th><th class="n">Durante el fallo</th><th>Veredicto</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1 · Latencia de red</td><td>Latencia p95</td><td class="n">23,9 ms</td><td class="n">487,5 ms</td><td>Refutada en parte</td></tr>
+        <tr><td>1 · Latencia de red</td><td>Disponibilidad</td><td class="n">100 %</td><td class="n">100 %</td><td>Confirmada</td></tr>
+        <tr><td>2 · Conexiones</td><td>Disponibilidad</td><td class="n">100 %</td><td class="n">56,5 %</td><td>Confirmada</td></tr>
+        <tr><td>2 · Conexiones</td><td>Tasa de error</td><td class="n">0 %</td><td class="n">43,5 %</td><td>Confirmada</td></tr>
+        <tr><td>2 · Conexiones</td><td>Errores en el registro central</td><td class="n">—</td><td class="n">0 de 736</td><td>Refutada</td></tr>
+        <tr><td>3 · Corte de telemetría</td><td>Compras completadas</td><td class="n">—</td><td class="n">152</td><td>Confirmada</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>Los tres experimentos revirtieron automáticamente y se verificó que no quedaran
+  efectos activos. El detalle técnico, las salidas de consola y el procedimiento
+  completo están en el informe técnico y su anexo de evidencias.</p>
+</footer>
+
+</div>
