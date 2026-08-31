@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-comun
+  namespace: otel-lab
+data:
+  # Ningun endpoint va incrustado en el codigo: es la convencion del
+  # laboratorio y lo que permite que la misma imagen corra en local, en Cloud
+  # Run y aqui sin recompilar.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "otlp"
+  OTEL_LOGS_EXPORTER: "otlp"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  # Los exemplars son el puente traza<->metrica del modulo B. trace_based
+  # adjunta el trace_id solo cuando el span esta muestreado, que es lo que se
+  # quiere: un exemplar que apunta a una traza que no se guardo es un enlace
+  # roto.
+  OTEL_METRICS_EXEMPLAR_FILTER: "trace_based"
+  OTEL_PYTHON_EXCLUDED_URLS: "health"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: otel-lab
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # ORDEN OBLIGATORIO: memory_limiter -> resource -> filter -> batch.
+      # memory_limiter va primero porque de nada sirve limitar la memoria
+      # despues de haberla reservado. batch va ultimo porque agrupar antes de
+      # filtrar significa pagar el coste de agrupar datos que se van a tirar.
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 15
+
+      resource:
+        attributes:
+          - key: deployment.environment
+            value: gke-integrador
+            action: upsert
+
+      resourcedetection:
+        detectors: [env, gcp]
+        timeout: 5s
+
+      filter/health:
+        error_mode: ignore
+        traces:
+          span:
+            - 'IsMatch(name, ".*/health.*")'
+
+      batch:
+        timeout: 1s
+        send_batch_size: 512
+
+    exporters:
+      googlecloud:
+        log:
+          default_log_name: otel-lab
+      googlemanagedprometheus:
+        # Sin esto el exportador anade el sufijo de unidad y
+        # checkout_duration_ms pasa a llamarse checkout_duration_ms_milliseconds,
+        # rompiendo todas las consultas del panel. Ya mordio una vez en la fase 2.
+        add_metric_suffixes: false
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, resourcedetection, filter/health, batch]
+          exporters: [googlecloud]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, resourcedetection, batch]
+          exporters: [googlemanagedprometheus]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, resourcedetection, batch]
+          exporters: [googlecloud]

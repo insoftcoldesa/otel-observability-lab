@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# EXPERIMENTO D.2 — 10 % de errores en data-service
+# ---------------------------------------------------------------------------
+# HIPOTESIS. Con un 10 % de fallos en el eslabon mas profundo de la cadena, la
+# tasa de error del checkout se sale de su linea base + 2 sigma, y como el
+# reintento no existe, el error se propaga hasta el usuario. La alerta
+# correlacionada del modulo B debe dispararse y traer el trace_id del fallo.
+#
+# POR QUE HTTPChaos Y NO LA VARIABLE ERROR_RATE. El servicio trae un interruptor
+# ERROR_RATE propio, y seria mas comodo usarlo. Se usa Chaos Mesh en su lugar
+# porque inyectar el fallo DESDE FUERA prueba algo que el interruptor interno no
+# puede probar: que la deteccion funciona sobre un fallo que el codigo de la
+# aplicacion no sabe que esta ocurriendo. Un servicio que colabora en su propio
+# fallo es un experimento mas debil.
+#
+# El interruptor ERROR_RATE se conserva como plan B: si Chaos Mesh no llega a
+# instalarse a tiempo, `kubectl set env deploy/data-service ERROR_RATE=0.1`
+# reproduce el mismo efecto observable.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: exp2-errores-data-service
+  namespace: otel-lab
+spec:
+  mode: all
+  selector:
+    namespaces: [otel-lab]
+    labelSelectors:
+      app: data-service
+  target: Request
+  port: 8002
+  path: "/catalog/*"
+  method: "GET"
+  # 10 % de las peticiones, no todas. Una caida total la detecta cualquier
+  # sonda de vida; lo dificil —y lo que de verdad mide la calidad de la
+  # observabilidad— es la degradacion parcial que deja el servicio "verde".
+  abort: true
+  replace:
+    code: 500
+  duration: "5m"

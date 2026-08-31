@@ -111,6 +111,7 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - promdata:/prometheus
     ports:
       - "9090:9090"
@@ -222,6 +223,48 @@ services:
   # -------------------------------------------------------------------------
   # 7. service-b — inventario
   # -------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # 6b. Alertmanager — enrutado de alertas (MODULO B del proyecto integrador)
+  # -------------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: otel-lab-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # Sin esto, los enlaces "Silence" de la interfaz apuntan al hostname
+      # interno del contenedor y no se pueden abrir desde el navegador.
+      - --web.external-url=http://localhost:9093
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [otel-lab]
+
+  # -------------------------------------------------------------------------
+  # 6c. alert-enricher — pega el trace_id a la alerta (MODULO B)
+  # -------------------------------------------------------------------------
+  alert-enricher:
+    build:
+      context: ./services/alert-enricher
+    container_name: otel-lab-alert-enricher
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      # URL vista DESDE EL NAVEGADOR del operador, no desde la red de Docker:
+      # el enlace de la alerta lo abre una persona, no un contenedor.
+      JAEGER_UI_URL: http://localhost:16686
+    ports:
+      - "9099:9099"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks: [otel-lab]
+
   service-b:
     build:
       context: ./services/service-b

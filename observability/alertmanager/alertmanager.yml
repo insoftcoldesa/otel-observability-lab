@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# Alertmanager — MODULO B
+# ---------------------------------------------------------------------------
+# Prometheus evalua reglas y decide QUE esta mal. Alertmanager decide A QUIEN se
+# le dice y CUANDO. Separar las dos cosas es lo que permite silenciar un aviso
+# sin tocar la regla que lo genera.
+
+global:
+  resolve_timeout: 2m
+
+route:
+  receiver: enriquecedor
+  group_by: [alertname, severity]
+
+  # Espera 30 s antes del primer envio para agrupar avisos que lleguen juntos.
+  # Si el checkout se cae, las tres alertas asociadas salen en un mensaje, no en
+  # tres. Es la diferencia entre un aviso y una tormenta de notificaciones.
+  group_wait: 30s
+  group_interval: 1m
+
+  # Cuatro horas antes de repetir una alerta que sigue activa. Repetir cada
+  # pocos minutos es la via mas rapida a que el equipo silencie el canal, y un
+  # canal silenciado no detecta nada.
+  repeat_interval: 4h
+
+  routes:
+    # La alerta de comparativa NO se notifica. Existe para contarla en el panel
+    # y demostrar cuanto ruido produciria el umbral estatico; enrutarla seria
+    # exactamente el ruido que el modulo pretende eliminar.
+    - matchers: [proposito="comparativa"]
+      receiver: nulo
+      group_wait: 0s
+      repeat_interval: 8h
+
+inhibit_rules:
+  # Si ya salto la alerta correlacionada, no tiene sentido mandar tambien la del
+  # umbral estatico sobre el mismo servicio: es el mismo incidente contado dos
+  # veces.
+  - source_matchers: [alertname="AnomaliaCorrelacionadaCheckout"]
+    target_matchers: [alertname="UmbralEstaticoErrorCheckout"]
+    equal: [severity]
+
+receivers:
+  - name: nulo
+
+  - name: enriquecedor
+    webhook_configs:
+      # Alertmanager no sabe nada de trazas. Este webhook recibe la alerta,
+      # busca en los exemplars de Prometheus un trace_id de la ventana afectada
+      # y devuelve la alerta con el enlace directo a Jaeger. Sin este paso, el
+      # operador recibe "el checkout va mal" y tiene que ponerse a buscar; con
+      # el, recibe la traza concreta que lo demuestra.
+      - url: http://alert-enricher:9099/alerta
+        send_resolved: true

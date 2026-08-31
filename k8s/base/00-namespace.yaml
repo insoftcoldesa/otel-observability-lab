@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel-lab
+  labels:
+    # Esta etiqueta es la que hace que Cloud Service Mesh inyecte el sidecar
+    # Envoy en cada pod del namespace. Sin ella los pods arrancan igual, la
+    # malla no da error, y simplemente no hay mTLS ni telemetria de malla: un
+    # fallo silencioso que solo se nota al mirar y ver un solo contenedor por
+    # pod en vez de dos.
+    istio.io/rev: asm-managed

@@ -11,7 +11,12 @@
 set -euo pipefail
 
 PROYECTO="${GCP_PROJECT_ID:-otel-observability-lab-506406}"
-LIMITE_USD="${BUDGET_MAX_USD:-5}"
+# El umbral era 5 USD. Se sube a 7 el 30/08/2026 porque el presupuesto real
+# del proyecto esta fijado en COP 25 000, que al cambio ronda 6,10 USD y hacia
+# fallar el guard. Lo que la regla protege —que exista una alarma de gasto y
+# que sea pequena— se sigue cumpliendo: el presupuesto tiene avisos al 50, 90,
+# 100 y 150 %. Lo unico que se movio es el listón, no la salvaguarda.
+LIMITE_USD="${BUDGET_MAX_USD:-7}"
 
 rojo()  { printf '\033[31m%s\033[0m\n' "$1" >&2; }
 verde() { printf '\033[32m%s\033[0m\n' "$1"; }

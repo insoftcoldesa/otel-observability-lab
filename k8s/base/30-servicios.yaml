@@ -1,0 +1,148 @@
+# ---------------------------------------------------------------------------
+# Los tres microservicios. La cadena completa del modulo A:
+#   service-a  ->  service-b  ->  data-service  ->  Cloud SQL
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-service
+  namespace: otel-lab
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: data-service}
+  template:
+    metadata:
+      labels: {app: data-service}
+    spec:
+      serviceAccountName: otel-lab
+      containers:
+        - name: app
+          image: PLACEHOLDER_IMAGEN_DATA
+          envFrom:
+            - configMapRef: {name: otel-comun}
+          env:
+            - {name: OTEL_SERVICE_NAME, value: data-service}
+            - {name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=otel-lab,deployment.environment=gke-integrador"}
+            - {name: POSTGRES_HOST, valueFrom: {secretKeyRef: {name: cloudsql, key: host}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: cloudsql, key: password}}}
+            - {name: POSTGRES_DB, value: catalogo}
+            - {name: POSTGRES_USER, value: dataservice}
+            # Interruptor del experimento D.2. En reposo vale 0; el experimento
+            # lo sube a 0.1 con `kubectl set env` y lo devuelve a 0 al acabar.
+            - {name: ERROR_RATE, value: "0"}
+          ports: [{containerPort: 8002}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8002}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8002}
+            # Holgado a proposito: durante el experimento de latencia del modulo
+            # D el servicio responde lento pero esta vivo. Una sonda agresiva lo
+            # reiniciaria y el experimento mediria el reinicio, no la latencia.
+            periodSeconds: 20
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-service
+  namespace: otel-lab
+spec:
+  selector: {app: data-service}
+  ports: [{name: http, port: 8002, targetPort: 8002}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b
+  namespace: otel-lab
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: service-b}
+  template:
+    metadata:
+      labels: {app: service-b}
+    spec:
+      serviceAccountName: otel-lab
+      containers:
+        - name: app
+          image: PLACEHOLDER_IMAGEN_B
+          envFrom:
+            - configMapRef: {name: otel-comun}
+          env:
+            - {name: OTEL_SERVICE_NAME, value: service-b}
+            - {name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=otel-lab,deployment.environment=gke-integrador"}
+            - {name: POSTGRES_HOST, valueFrom: {secretKeyRef: {name: cloudsql, key: host}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: cloudsql, key: password}}}
+            - {name: POSTGRES_DB, value: catalogo}
+            - {name: POSTGRES_USER, value: dataservice}
+            # Solo definida en GKE: en el laboratorio local esta variable no
+            # existe y service-b no llama a nadie. Asi el tercer eslabon se
+            # anade sin romper el stack de las fases anteriores.
+            - {name: DATA_SERVICE_URL, value: "http://data-service:8002"}
+          ports: [{containerPort: 8001}]
+          resources:
+            requests: {cpu: 150m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8001}
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+  namespace: otel-lab
+spec:
+  selector: {app: service-b}
+  ports: [{name: http, port: 8001, targetPort: 8001}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+  namespace: otel-lab
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: service-a}
+  template:
+    metadata:
+      labels: {app: service-a}
+    spec:
+      serviceAccountName: otel-lab
+      containers:
+        - name: app
+          image: PLACEHOLDER_IMAGEN_A
+          envFrom:
+            - configMapRef: {name: otel-comun}
+          env:
+            - {name: OTEL_SERVICE_NAME, value: service-a}
+            - {name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=otel-lab,deployment.environment=gke-integrador"}
+            - {name: SERVICE_B_URL, value: "http://service-b:8001"}
+          ports: [{containerPort: 8000}]
+          resources:
+            requests: {cpu: 150m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+  namespace: otel-lab
+spec:
+  # LoadBalancer y no Ingress: un Ingress de GKE levanta un balanceador HTTP(S)
+  # global con su IP, que es justo lo que CLAUDE.md descarta por costo. Un
+  # Service de tipo LoadBalancer usa un balanceador de red regional, mas barato,
+  # y para generar carga contra el laboratorio sobra.
+  type: LoadBalancer
+  selector: {app: service-a}
+  ports: [{name: http, port: 80, targetPort: 8000}]

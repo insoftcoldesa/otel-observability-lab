@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: otel-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: otel-collector}
+  template:
+    metadata:
+      labels: {app: otel-collector}
+      annotations:
+        # El Collector NO lleva sidecar de malla. Si lo llevara, Envoy
+        # interceptaria el trafico OTLP que le llega desde las apps y generaria
+        # spans sobre el envio de spans: un bucle de telemetria sobre la propia
+        # telemetria. Se excluye a proposito.
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: otel-lab
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.115.1
+          args: ["--config=/conf/config.yaml"]
+          volumeMounts:
+            - {name: config, mountPath: /conf}
+          ports:
+            - {containerPort: 4317, name: otlp-grpc}
+            - {containerPort: 4318, name: otlp-http}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            # El limite importa: memory_limiter esta configurado por porcentaje,
+            # asi que sin limite calcula sobre la memoria del NODO entero y
+            # nunca activa la contencion.
+            limits: {memory: 512Mi}
+      volumes:
+        - name: config
+          configMap: {name: otel-collector-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: otel-lab
+spec:
+  selector: {app: otel-collector}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: 4317}
+    - {name: otlp-http, port: 4318, targetPort: 4318}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-lab
+  namespace: otel-lab
+  annotations:
+    # Workload Identity: ata esta cuenta de Kubernetes a la de GCP que si tiene
+    # permisos sobre Cloud Trace y Monitoring. Es lo que evita tener que montar
+    # una clave JSON de service account dentro del pod, que ademas CLAUDE.md
+    # prohibe commitear.
+    iam.gke.io/gcp-service-account: PLACEHOLDER_SA

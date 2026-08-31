@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# EXPERIMENTO D.1 — 200 ms de latencia inyectada en service-b
+# ---------------------------------------------------------------------------
+# HIPOTESIS. Si se anaden 200 ms de retardo a la red de service-b, el p99 del
+# checkout supera los 500 ms del SLO, la regla del modulo B lo detecta, y la
+# alerta llega en menos de 2 minutos (MTTD objetivo).
+#
+# QUE SE FALSA. Si la alerta NO salta, no es que el sistema aguante: es que la
+# deteccion no sirve. Ese es el resultado interesante del experimento, no el
+# caso en que todo funciona.
+#
+# RADIO DE EXPLOSION. `mode: fixed / value: "1"` toca UN pod de los dos. Con
+# `mode: all` caerian los dos y no habria forma de distinguir "el sistema se
+# degrada" de "el sistema no existe". Ademas, con un pod sano y otro lento se
+# ve si el balanceo reparte el dano, que es lo que pasaria en produccion.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: exp1-latencia-service-b
+  namespace: otel-lab
+spec:
+  action: delay
+  mode: fixed
+  value: "1"
+  selector:
+    namespaces: [otel-lab]
+    labelSelectors:
+      app: service-b
+  delay:
+    latency: "200ms"
+    # Sin jitter la latencia inyectada es un valor constante y perfecto, que no
+    # se parece a ninguna red real. 50 ms de dispersion hace que la distribucion
+    # tenga cola, que es justo lo que el p99 debe capturar.
+    jitter: "50ms"
+    correlation: "50"
+  # PARADA AUTOMATICA. Es la salvaguarda mas importante del manifiesto: si la
+  # sesion se corta, el portatil se suspende o alguien cierra la terminal, el
+  # experimento se revierte solo a los 5 minutos. Nunca se depende de que
+  # alguien ejecute el rollback a mano.
+  duration: "5m"

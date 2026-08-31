@@ -1,0 +1,35 @@
+# Chaos Mesh necesita permisos sobre los pods del namespace objetivo. Se acota a
+# `otel-lab` y no se le da alcance de cluster: una herramienta cuyo proposito es
+# romper cosas es exactamente aquella a la que no se le dan permisos de mas.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chaos-operador
+  namespace: otel-lab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chaos-operador
+  namespace: otel-lab
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log]
+    verbs: [get, list, watch]
+  - apiGroups: ["chaos-mesh.org"]
+    resources: ["*"]
+    verbs: [get, list, watch, create, delete, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chaos-operador
+  namespace: otel-lab
+subjects:
+  - kind: ServiceAccount
+    name: chaos-operador
+    namespace: otel-lab
+roleRef:
+  kind: Role
+  name: chaos-operador
+  apiGroup: rbac.authorization.k8s.io

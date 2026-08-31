@@ -1,0 +1,116 @@
+# ---------------------------------------------------------------------------
+# MODULO B — deteccion de anomalias por desviacion estandar, no por umbral fijo
+# ---------------------------------------------------------------------------
+#
+# EL PROBLEMA QUE RESUELVE. Un umbral estatico ("avisa si la tasa de error pasa
+# del 1 %") tiene dos fallos opuestos y simultaneos:
+#
+#   - De dia, con trafico alto, un 1 % son cientos de peticiones rotas y la
+#     alerta llega tarde.
+#   - De noche, con trafico bajo, dos peticiones fallidas de veinte ya son un
+#     10 % y la alerta salta sin que pase nada.
+#
+# El umbral fijo no sabe cual es el comportamiento normal del sistema. La regla
+# de aqui si: compara contra la media movil de la ultima hora y solo dispara si
+# la desviacion supera dos sigmas. Dos sigmas, sobre una distribucion normal,
+# dejan fuera el 95 % del comportamiento habitual.
+#
+# LA SEGUNDA CONDICION ES LA QUE DE VERDAD QUITA RUIDO. Una anomalia en la tasa
+# de error, sola, sigue disparando por cosas que al usuario no le duelen: un
+# rastreador pidiendo un SKU que ya no existe mueve el porcentaje sin que el
+# servicio este mal. Por eso la alerta exige ADEMAS que el p99 se haya salido
+# del SLO. Dos senales independientes que se rompen a la vez son un incidente;
+# una sola es casi siempre ruido.
+
+groups:
+  - name: sli-base
+    interval: 15s
+    rules:
+      # Se cuentan como fallo del servicio solo los 5xx. Un 4xx es un cliente
+      # mandando basura: cuenta para el volumen, no contra nuestra fiabilidad.
+      # Meterlos aqui haria que un bot escaneando URLs nos abriera un incidente.
+      - record: sli:checkout_error_rate:ratio5m
+        expr: |
+          sum(rate(checkout_requests_total{status="server_error"}[5m]))
+            /
+          clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
+
+      - record: sli:checkout_p99:ms5m
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(checkout_duration_ms_bucket[5m]))
+          )
+
+      - record: sli:checkout_throughput:rps5m
+        expr: sum(rate(checkout_requests_total[5m]))
+
+  - name: linea-base-movil
+    interval: 15s
+    rules:
+      # Ventana de una hora: suficiente para que la media represente el
+      # comportamiento reciente, corta como para adaptarse tras un despliegue.
+      # Con 24 h la linea base seria mas estable pero tardaria un dia entero en
+      # aprender que el sistema cambio.
+      - record: sli:checkout_error_rate:media1h
+        expr: avg_over_time(sli:checkout_error_rate:ratio5m[1h])
+
+      - record: sli:checkout_error_rate:sigma1h
+        expr: stddev_over_time(sli:checkout_error_rate:ratio5m[1h])
+
+      # El umbral dinamico, materializado como serie propia para poder pintarlo
+      # en el panel junto a la tasa real. Una alerta que no se puede ver venir
+      # en una grafica es una alerta en la que nadie confia.
+      - record: sli:checkout_error_rate:umbral_2sigma
+        expr: |
+          sli:checkout_error_rate:media1h + 2 * sli:checkout_error_rate:sigma1h
+
+  - name: correlacion-cross-signal
+    interval: 15s
+    rules:
+      # LA REGLA DEL MODULO B.
+      - alert: AnomaliaCorrelacionadaCheckout
+        expr: |
+          (
+            sli:checkout_error_rate:ratio5m
+              >
+            sli:checkout_error_rate:umbral_2sigma
+          )
+          and
+          (
+            sli:checkout_p99:ms5m > 500
+          )
+          and
+          (
+            # Guarda de volumen. Sin ella, a las 4 de la madrugada con dos
+            # peticiones en cinco minutos, una sola fallida da un 50 % y supera
+            # cualquier sigma. Es el modo de fallo clasico de la deteccion
+            # estadistica: con muestras minusculas, todo es anomalo.
+            sli:checkout_throughput:rps5m > 0.2
+          )
+        for: 1m
+        labels:
+          severity: critical
+          equipo: plataforma
+          senales: error_rate+latencia
+        annotations:
+          resumen: "Checkout degradado: error y latencia rotos a la vez"
+          descripcion: >-
+            La tasa de error del checkout es {{ $value | humanizePercentage }},
+            por encima de su linea base + 2 sigma, y el p99 supera los 500 ms
+            del SLO. Dos senales independientes degradadas simultaneamente.
+          # El webhook enriquecedor rellena el trace_id consultando exemplars.
+          runbook: "docs/integrador/runbook-modulo-b.md"
+
+      # Contraste para el modulo B: la MISMA condicion de error pero con umbral
+      # fijo, sin linea base y sin correlacion. No se enruta a nadie; existe solo
+      # para medir cuantas veces habria despertado a alguien sin motivo. Es la
+      # evidencia cuantitativa de la reduccion de ruido.
+      - alert: UmbralEstaticoErrorCheckout
+        expr: sli:checkout_error_rate:ratio5m > 0.01
+        for: 1m
+        labels:
+          severity: none
+          proposito: comparativa
+        annotations:
+          resumen: "Umbral estatico del 1 % superado (solo para comparar)"
