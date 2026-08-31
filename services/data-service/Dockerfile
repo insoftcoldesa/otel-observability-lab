@@ -9,8 +9,14 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /build
-COPY pyproject.toml ./
-RUN uv pip install --python /opt/venv/bin/python -r pyproject.toml
+# `uv sync --locked`, igual que service-a y service-b. El primer intento uso
+# `uv pip install --python /opt/venv/bin/python` y fallo en Cloud Build con
+# "No virtual environment found for path /opt/venv/bin/python": esa forma exige
+# que el entorno YA exista. `uv sync` lo crea el mismo a partir de
+# UV_PROJECT_ENVIRONMENT. Ademas obliga a tener uv.lock, con lo que las
+# versiones quedan fijadas y la imagen es reproducible.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev
 
 # ---------------------------------------------------------------------------
 
