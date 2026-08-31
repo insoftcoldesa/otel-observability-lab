@@ -29,9 +29,16 @@ groups:
       # Se cuentan como fallo del servicio solo los 5xx. Un 4xx es un cliente
       # mandando basura: cuenta para el volumen, no contra nuestra fiabilidad.
       # Meterlos aqui haria que un bot escaneando URLs nos abriera un incidente.
+      # `or vector(0)` NO ES COSMETICO. Si no ha habido ningun 5xx, el selector
+      # no casa con ninguna serie y sum() devuelve un vector VACIO, no un cero.
+      # Un vector vacio dividido por algo sigue vacio, y la condicion entera de
+      # la alerta se evapora en silencio: no es que valga falso, es que no
+      # existe. El experimento de caos lo destapo —la latencia se multiplico por
+      # 20 y la regla no pudo ni evaluarse—. Mismo fallo que el indicador de
+      # disponibilidad de la fase 3.
       - record: sli:checkout_error_rate:ratio5m
         expr: |
-          sum(rate(checkout_requests_total{status="server_error"}[5m]))
+          (sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0))
             /
           clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
 

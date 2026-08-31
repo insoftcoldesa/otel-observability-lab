@@ -84,9 +84,9 @@ print('NUNCA')
 }
 
 CONDICION='(
-  (sum(rate(checkout_requests_total{status="server_error"}[5m])) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))
-  > (avg_over_time((sum(rate(checkout_requests_total{status="server_error"}[5m])) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))[1h:5m])
-     + 2 * stddev_over_time((sum(rate(checkout_requests_total{status="server_error"}[5m])) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))[1h:5m]))
+  ((sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0)) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))
+  > (avg_over_time(((sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0)) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))[1h:5m])
+     + 2 * stddev_over_time(((sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0)) / clamp_min(sum(rate(checkout_requests_total[5m])), 0.001))[1h:5m]))
 ) and (histogram_quantile(0.99, sum by (le) (rate(checkout_duration_ms_bucket[5m]))) > 500)'
 
 P99='histogram_quantile(0.99, sum by (le) (rate(checkout_duration_ms_bucket[5m])))'

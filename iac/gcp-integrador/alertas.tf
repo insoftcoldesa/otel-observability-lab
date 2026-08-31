@@ -50,6 +50,10 @@ resource "google_monitoring_alert_policy" "anomalia_correlacionada" {
   conditions {
     display_name = "error_rate por encima de linea base + 2 sigma"
 
+    # `or vector(0)` en cada numerador: sin ningun 5xx la serie no existe y
+    # la condicion no se evalua a falso, se evalua a NADA. Descubierto al
+    # ejecutar el caos: el p99 subio a 4900 ms y la regla ni se activo.
+    #
     # SE USA PromQL Y NO MQL. El primer intento uso MQL y la API lo rechazo con
     # "Attempt to apply a factored table op to another factored table op": la
     # gramatica de MQL no admite encadenar dos operaciones de tabla factorizadas
@@ -67,7 +71,7 @@ resource "google_monitoring_alert_policy" "anomalia_correlacionada" {
       query = <<-PROMQL
         (
           (
-            sum(rate(checkout_requests_total{status="server_error"}[5m]))
+            (sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0))
               /
             clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
           )
@@ -75,7 +79,7 @@ resource "google_monitoring_alert_policy" "anomalia_correlacionada" {
           (
             avg_over_time(
               (
-                sum(rate(checkout_requests_total{status="server_error"}[5m]))
+                (sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0))
                   /
                 clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
               )[1h:5m]
@@ -83,7 +87,7 @@ resource "google_monitoring_alert_policy" "anomalia_correlacionada" {
             + 2 *
             stddev_over_time(
               (
-                sum(rate(checkout_requests_total{status="server_error"}[5m]))
+                (sum(rate(checkout_requests_total{status="server_error"}[5m])) or vector(0))
                   /
                 clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
               )[1h:5m]
