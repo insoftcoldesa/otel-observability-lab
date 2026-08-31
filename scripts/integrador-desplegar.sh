@@ -44,19 +44,24 @@ if fase 2; then
 fi
 
 # --- 3. Imagenes ------------------------------------------------------------
-# --platform linux/amd64 es OBLIGATORIO: el Mac es arm64 y los nodos e2 son
-# x86. Una imagen arm en un nodo x86 no da un error claro, da un CrashLoopBackOff
-# con "exec format error" que cuesta un rato entender.
+# SE CONSTRUYE EN LA NUBE, NO EN LOCAL. El primer intento uso
+# `docker buildx --platform linux/amd64` y fue un error: el Mac es arm64, los
+# nodos de GKE son x86, y cruzar arquitectura obliga a emular con QEMU. Docker
+# Desktop se quedo bloqueado —doce minutos sin publicar una sola imagen, todos
+# sus procesos al 0 % de CPU y `docker ps` sin responder— y hubo que matarlo.
+#
+# Cloud Build compila en maquinas x86 nativas: no hay emulacion, no hay Docker
+# local implicado y ademas es mas rapido. El nivel gratuito cubre de sobra tres
+# imagenes pequenas. La leccion es generalizable: construir para una
+# arquitectura ajena desde el portatil es la via lenta y fragil cuando el
+# destino ya vive en esa arquitectura.
 if fase 3; then
-  azul "Fase 3 — construir y publicar imagenes (lento: cruza arquitectura)"
-  gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+  azul "Fase 3 — construir imagenes en Cloud Build (x86 nativo, sin Docker local)"
   for servicio in service-a service-b data-service; do
     verde "construyendo ${servicio}"
-    docker buildx build \
-      --platform linux/amd64 \
+    gcloud builds submit "${RAIZ}/services/${servicio}" \
       --tag "${REPO}/${servicio}:integrador" \
-      --push \
-      "${RAIZ}/services/${servicio}"
+      --project "$PROYECTO"
   done
   verde "tres imagenes publicadas"
 fi
