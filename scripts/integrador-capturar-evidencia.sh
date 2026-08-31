@@ -35,10 +35,20 @@ pedir() { # $1 = cart_id  $2 = query extra
 }
 
 trace_de() { # $1 = cart_id
+  # DONDE VIVEN DE VERDAD LOS CAMPOS. La primera version buscaba en
+  # jsonPayload.cart_id y jsonPayload.trace_id, y no encontraba nada. El
+  # exportador googlecloud no mete el registro como JSON: pone el mensaje en
+  # textPayload, los campos del `extra={...}` en `labels`, y —esto es lo
+  # importante— el identificador de traza en el campo NATIVO `trace` de Cloud
+  # Logging, con el formato projects/<id>/traces/<trace_id>.
+  #
+  # Que use el campo nativo y no un atributo cualquiera es lo que hace que la
+  # consola muestre el enlace "Ver traza" junto a cada linea. La correlacion no
+  # es una convencion nuestra: la entiende la plataforma.
   gcloud logging read \
-    "jsonPayload.cart_id=\"$1\" AND jsonPayload.trace_id!=\"\"" \
-    --project="$PROYECTO" --limit=1 --freshness=20m \
-    --format="value(jsonPayload.trace_id)" 2>/dev/null | head -1
+    "labels.cart_id=\"$1\"" \
+    --project="$PROYECTO" --limit=1 --freshness=30m \
+    --format="value(trace)" 2>/dev/null | head -1 | sed 's|.*/traces/||'
 }
 
 azul "Generando las tres peticiones"
@@ -59,6 +69,7 @@ T_LENTA="$(trace_de "$LENTA")"
 T_FALLIDA="$(trace_de "$FALLIDA")"
 
 url_traza() { echo "https://console.cloud.google.com/traces/list?project=${PROYECTO}&tid=$1"; }
+url_log()   { echo "https://console.cloud.google.com/logs/query;query=labels.cart_id%3D%22$1%22?project=${PROYECTO}"; }
 
 {
   echo "# Trazas navegables — evidencia del proyecto integrador"
