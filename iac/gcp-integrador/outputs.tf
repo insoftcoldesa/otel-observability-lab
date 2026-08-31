@@ -18,3 +18,7 @@ output "db_password" {
 output "credenciales_kubectl" {
   value = "gcloud container clusters get-credentials ${google_container_cluster.lab.name} --zone ${var.zona} --project ${var.project_id}"
 }
+
+output "cuenta_servicio" {
+  value = google_service_account.cargas.email
+}

@@ -14,6 +14,8 @@ from fastapi import FastAPI, HTTPException, Query
 from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, Field
 
+import requests
+
 from app import db
 from app.telemetry import inventory_reserved_items, setup_logging, tracer
 
@@ -43,6 +45,51 @@ class ReserveItem(BaseModel):
 class ReserveRequest(BaseModel):
     cart_id: str = Field(min_length=1)
     items: list[ReserveItem] = Field(min_length=1)
+
+
+# --- Enlace con data-service (modulo A del proyecto integrador) --------------
+#
+# La variable SOLO esta definida en GKE. En el laboratorio local no existe y
+# esta funcion no hace nada: asi el tercer eslabon de la cadena se anade sin
+# tocar el comportamiento de las fases 1 a 4, cuyas mediciones ya estan tomadas
+# y no se pueden invalidar a estas alturas.
+DATA_SERVICE_URL = os.environ.get("DATA_SERVICE_URL", "").rstrip("/")
+
+# Sesion reutilizada, no requests.post() suelto. Cada llamada suelta abre una
+# conexion TCP nueva y, bajo carga, agota los puertos efimeros. Fue justo uno de
+# los hallazgos del Game Day sobre service-a; no se repite el error aqui.
+_sesion = requests.Session()
+
+
+def enriquecer_desde_catalogo(sku: str) -> dict | None:
+    """Pide a data-service los datos del producto. Nunca hace fallar la reserva.
+
+    La degradacion es deliberada: el catalogo aporta contexto (nombre, precio),
+    no autoriza la operacion. Si esta caido, la reserva debe seguir funcionando.
+    Propagar aqui el fallo convertiria un servicio auxiliar en una dependencia
+    critica, que es la forma mas comun de fabricar una caida en cascada.
+
+    El span se marca en ERROR aunque la reserva siga: el usuario no se entera,
+    pero la traza tiene que contar la verdad de lo que ocurrio.
+    """
+    if not DATA_SERVICE_URL:
+        return None
+
+    with tracer.start_as_current_span("catalog.enrich") as span:
+        span.set_attribute("sku", sku)
+        try:
+            resp = _sesion.get(f"{DATA_SERVICE_URL}/catalog/{sku}", timeout=2)
+            resp.raise_for_status()
+            datos = resp.json()
+            span.set_attribute("catalog.categoria", datos.get("categoria", ""))
+            return datos
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, "catalogo no disponible"))
+            span.set_attribute("catalog.degradado", True)
+            log.warning("catalogo no disponible, se continua sin enriquecer",
+                        extra={"sku": sku, "error": str(exc)})
+            return None
 
 
 def reserve_stock(cur, sku: str, qty: int) -> int:
@@ -101,9 +148,12 @@ def reserve(
     with db.connection() as conn, conn.cursor() as cur:
         for item in req.items:
             stock_after = reserve_stock(cur, item.sku, item.qty)
-            reservations.append(
-                {"sku": item.sku, "qty": item.qty, "stock_after": stock_after}
-            )
+            producto = enriquecer_desde_catalogo(item.sku)
+            reserva = {"sku": item.sku, "qty": item.qty, "stock_after": stock_after}
+            if producto:
+                reserva["nombre"] = producto["nombre"]
+                reserva["precio_centavos"] = producto["precio_centavos"]
+            reservations.append(reserva)
 
         if fail:
             # Dentro de la transaccion: el rollback deja el stock intacto.

@@ -49,27 +49,62 @@ resource "google_monitoring_alert_policy" "anomalia_correlacionada" {
 
   conditions {
     display_name = "error_rate por encima de linea base + 2 sigma"
-    condition_monitoring_query_language {
-      # La ventana de alineacion (5 m) y la de linea base (1 h) son las mismas
-      # que en la regla de Prometheus del stack local, a proposito: el modulo B
-      # afirma que la deteccion es equivalente en ambos entornos, y eso solo es
-      # cierto si los parametros coinciden.
-      query = <<-MQL
-        fetch prometheus_target
-        | metric 'prometheus.googleapis.com/checkout_requests_total/counter'
-        | align rate(5m)
-        | every 1m
-        | group_by [metric.status], [valor: sum(value.counter)]
-        | { filter metric.status == 'server_error'
-          ; ident }
-        | ratio
-        | { ident
-          ; window(1h) | group_by [], [media: mean(val()), sigma: stddev(val())] }
-        | join
-        | value [excedido: val(0) > val(1) + 2 * val(2)]
-        | condition excedido
-      MQL
-      duration = "60s"
+
+    # SE USA PromQL Y NO MQL. El primer intento uso MQL y la API lo rechazo con
+    # "Attempt to apply a factored table op to another factored table op": la
+    # gramatica de MQL no admite encadenar dos operaciones de tabla factorizadas
+    # como se habia escrito. Reescribirlo era posible, pero PromQL es mejor
+    # opcion por una razon de fondo, no de comodidad: las metricas llegan por
+    # Managed Service for Prometheus, asi que aqui se puede usar EXACTAMENTE la
+    # misma expresion que en el Prometheus local. El modulo B afirma que la
+    # deteccion es equivalente en los dos entornos; con dos lenguajes distintos
+    # esa afirmacion habria que creersela, con el mismo se puede comprobar.
+    #
+    # La expresion va desarrollada en vez de apoyarse en reglas de registro
+    # porque en Managed Prometheus habria que declararlas aparte, y entonces la
+    # alerta dependeria de un objeto que no vive en este Terraform.
+    condition_prometheus_query_language {
+      query = <<-PROMQL
+        (
+          (
+            sum(rate(checkout_requests_total{status="server_error"}[5m]))
+              /
+            clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
+          )
+            >
+          (
+            avg_over_time(
+              (
+                sum(rate(checkout_requests_total{status="server_error"}[5m]))
+                  /
+                clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
+              )[1h:5m]
+            )
+            + 2 *
+            stddev_over_time(
+              (
+                sum(rate(checkout_requests_total{status="server_error"}[5m]))
+                  /
+                clamp_min(sum(rate(checkout_requests_total[5m])), 0.001)
+              )[1h:5m]
+            )
+          )
+        )
+        and
+        (
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(checkout_duration_ms_bucket[5m]))
+          ) > 500
+        )
+        and
+        (
+          sum(rate(checkout_requests_total[5m])) > 0.2
+        )
+      PROMQL
+
+      duration            = "60s"
+      evaluation_interval = "60s"
     }
   }
 
@@ -125,6 +160,11 @@ resource "google_monitoring_alert_policy" "trafico_denegado_anomalo" {
     }
   }
 
+  # Sin esto Terraform crea la politica EN PARALELO con la metrica que
+  # consulta, y la API responde 404 porque el descriptor aun no existe.
+  # Fue exactamente lo que fallo en el primer apply.
+  depends_on = [google_logging_metric.conexiones_denegadas]
+
   notification_channels = [google_monitoring_notification_channel.correo.id]
   alert_strategy { auto_close = "1800s" }
 }
@@ -164,6 +204,11 @@ resource "google_monitoring_alert_policy" "exfiltracion" {
     }
   }
 
+  # Sin esto Terraform crea la politica EN PARALELO con la metrica que
+  # consulta, y la API responde 404 porque el descriptor aun no existe.
+  # Fue exactamente lo que fallo en el primer apply.
+  depends_on = [google_logging_metric.egreso_externo_bytes]
+
   notification_channels = [google_monitoring_notification_channel.correo.id]
   alert_strategy { auto_close = "1800s" }
 }
@@ -184,20 +229,33 @@ resource "google_monitoring_alert_policy" "cambio_iam" {
 
   conditions {
     display_name = "cualquier cambio de IAM"
-    condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/seguridad/cambios_iam\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
 
-      aggregations {
-        alignment_period     = "60s"
-        per_series_aligner   = "ALIGN_DELTA"
-        cross_series_reducer = "REDUCE_SUM"
-      }
+    # ALERTA SOBRE EL REGISTRO, NO SOBRE UNA METRICA. El primer intento uso un
+    # umbral sobre la metrica basada en registros y la API lo rechazo: exige
+    # restringir `resource.type`, y los eventos de IAM no tienen uno solo
+    # —aparecen como k8s_cluster, project o service_account segun que se toque—
+    # asi que cualquier restriccion habria dejado casos fuera en silencio.
+    #
+    # condition_matched_log es ademas lo correcto conceptualmente: un cambio de
+    # permisos es un EVENTO, no una serie temporal. Contarlo por minuto y
+    # comparar contra cero era describir un evento con la herramienta de medir
+    # caudales.
+    condition_matched_log {
+      filter = <<-FILTRO
+        protoPayload.methodName="SetIamPolicy"
+        OR protoPayload.methodName:"serviceAccounts.create"
+        OR protoPayload.methodName:"serviceAccountKeys.create"
+      FILTRO
+    }
+  }
+
+  # Obligatorio en las alertas de registro: sin limite de frecuencia, una
+  # reconciliacion masiva de IAM generaria un correo por entrada.
+  alert_strategy {
+    notification_rate_limit {
+      period = "300s"
     }
   }
 
   notification_channels = [google_monitoring_notification_channel.correo.id]
-  alert_strategy { auto_close = "1800s" }
 }

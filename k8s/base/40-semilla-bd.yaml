@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Carga inicial del catalogo en Cloud SQL
+# ---------------------------------------------------------------------------
+# Un Job y no un initContainer en data-service: con dos replicas, un
+# initContainer ejecutaria la carga dos veces en paralelo. El esquema es
+# idempotente (IF NOT EXISTS / ON CONFLICT) asi que no romperia, pero un Job
+# deja claro que esto es una operacion de despliegue que ocurre UNA vez, no
+# parte del arranque del servicio.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: semilla-catalogo
+  namespace: otel-lab
+spec:
+  # Si falla, tres intentos y para. Sin este limite un fallo de conectividad
+  # deja el Job reintentando indefinidamente contra Cloud SQL.
+  backoffLimit: 3
+  template:
+    metadata:
+      annotations:
+        # Sin sidecar: Envoy no termina cuando el contenedor principal acaba, y
+        # el Job se quedaria en Running para siempre. Es la trampa clasica de
+        # meter Jobs en una malla de servicios.
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -f /sql/init.sql"]
+          env:
+            - {name: PGHOST, valueFrom: {secretKeyRef: {name: cloudsql, key: host}}}
+            - {name: PGPASSWORD, valueFrom: {secretKeyRef: {name: cloudsql, key: password}}}
+            - {name: PGUSER, value: dataservice}
+            - {name: PGDATABASE, value: catalogo}
+          volumeMounts:
+            - {name: sql, mountPath: /sql}
+      volumes:
+        - name: sql
+          configMap: {name: esquema-catalogo}

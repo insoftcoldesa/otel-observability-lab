@@ -79,7 +79,10 @@ resource "google_monitoring_dashboard" "seguridad" {
                 }
                 plotType = "LINE"
               }]
-              thresholds = [{ value = 100, color = "RED", direction = "ABOVE" }]
+              # Sin `color`: la API lo rechaza dentro de un umbral de XyChart
+              # ("color cannot be specified within a XyChart Threshold").
+              # El color de la linea de umbral lo decide Cloud Monitoring.
+              thresholds = [{ value = 100, direction = "ABOVE" }]
               yAxis      = { label = "denegaciones/min", scale = "LINEAR" }
             }
           }
