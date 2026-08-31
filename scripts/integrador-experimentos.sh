@@ -162,10 +162,10 @@ ejecutar() { # $1 = numero  $2 = manifiesto  $3 = nombre del recurso  $4 = descr
 }
 
 case "$CUAL" in
-  1) ejecutar 1 "${RAIZ}/k8s/chaos/exp1-latencia-red.yaml"       exp1-latencia-service-b   "200 ms de latencia en service-b" ;;
+  1) ejecutar 1 "${RAIZ}/k8s/chaos/exp1-latencia-service-b.yaml"       exp1-latencia-service-b   "200 ms de latencia en service-b" ;;
   2) ejecutar 2 "${RAIZ}/k8s/chaos/exp2-errores-data-service.yaml" exp2-errores-data-service "10 % de errores en data-service" ;;
   *)
-     ejecutar 1 "${RAIZ}/k8s/chaos/exp1-latencia-red.yaml"       exp1-latencia-service-b   "200 ms de latencia en service-b"
+     ejecutar 1 "${RAIZ}/k8s/chaos/exp1-latencia-service-b.yaml"       exp1-latencia-service-b   "200 ms de latencia en service-b"
      azul "pausa de 3 min para que la linea base se recupere entre experimentos"
      sleep 180
      ejecutar 2 "${RAIZ}/k8s/chaos/exp2-errores-data-service.yaml" exp2-errores-data-service "10 % de errores en data-service"
