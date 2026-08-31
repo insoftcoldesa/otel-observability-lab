@@ -47,6 +47,58 @@ los tres pilares de telemetría, benchmark de overhead y despliegue en GCP y AWS
                                               └──── Grafana :3000 ┘
 ```
 
+### Proyecto integrador — despliegue en GKE
+
+El laboratorio local usa dos servicios y backends autoalojados. El proyecto
+integrador añade un tercer servicio, sustituye los backends por los de Google
+Cloud y mete todo en una malla de servicios.
+
+```mermaid
+graph TB
+    cliente([cliente]) -->|HTTP| lb[Balanceador de red]
+
+    subgraph gke["GKE · namespace otel-lab · malla asm-managed"]
+        lb --> sa["service-a :8000<br/>app + istio-proxy"]
+        sa -->|traceparent W3C| sb["service-b :8001<br/>app + istio-proxy"]
+        sb -->|traceparent W3C| ds["data-service :8002<br/>app + istio-proxy"]
+        col["OTel Collector<br/><i>sin sidecar, a propósito</i>"]
+        sa -.->|OTLP gRPC| col
+        sb -.->|OTLP gRPC| col
+        ds -.->|OTLP gRPC| col
+    end
+
+    ds -->|IP privada| sql[("Cloud SQL<br/>PostgreSQL 15")]
+
+    col --> trace["Cloud Trace"]
+    col --> log["Cloud Logging"]
+    col --> prom["Managed Prometheus"]
+
+    prom --> alerta{{"Alerta correlacionada<br/>error > μ+2σ Y p99 > SLO"}}
+    log --> seg["4 señales de seguridad<br/>flow logs · firewall · auditoría"]
+
+    caos["Chaos Mesh"] -.->|inyecta| sb
+    caos -.->|inyecta| ds
+
+    classDef gcp fill:#e8f0fe,stroke:#4285f4,color:#174ea6
+    classDef app fill:#f1f3f4,stroke:#5f6368,color:#202124
+    classDef ctrl fill:#fef7e0,stroke:#f9ab00,color:#a56300
+    class trace,log,prom,sql gcp
+    class sa,sb,ds,col app
+    class alerta,seg,caos ctrl
+```
+
+**Por qué el Collector no lleva sidecar.** Es la única exclusión deliberada de la
+malla: si Envoy interceptara su tráfico OTLP, se generarían trazas sobre el envío
+de trazas.
+
+**Por qué tres servicios y no dos.** Con dos saltos basta para demostrar que el
+contexto se propaga entre procesos. Con tres se demuestra que se propaga *más
+allá del primer salto*, que es donde falla la instrumentación mal hecha.
+
+La cadena completa, la ejecución de los experimentos y los resultados medidos
+están en [`docs/integrador/`](docs/integrador/). El reporte ejecutivo es
+`Reporte-Proyecto-Integrador.docx`.
+
 ---
 
 ## Prerequisitos
