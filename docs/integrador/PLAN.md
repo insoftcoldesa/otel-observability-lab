@@ -49,54 +49,43 @@ toca.
 Estimación para una jornada: ~1–2 USD. El riesgo real no es esa cifra sino
 olvidar el `destroy`, así que se ejecuta el mismo día.
 
-## Estado — 30/08/2026, 19:30
+## Estado final — 30/08/2026, 23:15
 
-### Hecho
+### Completado
 
-| Tarea | Estado |
+| Módulo | Entregable | Evidencia |
+|---|---|---|
+| A | 3 servicios + Cloud SQL + malla | Cadena verificada; pods 2/2 con sidecar |
+| B | Detección 2σ correlacionada + enriquecedor | Alerta desplegada; MTTD medido |
+| C | 4 señales de seguridad + panel | Panel y 3 políticas creados |
+| D | 3 experimentos de caos | `evidencias/exp1..exp3` |
+| E | Madurez 8 dominios + roadmap | `madurez.md` |
+| — | Reporte ejecutivo | 10 pp, paginado con Word |
+| — | Libreto del vídeo | `libreto-video.md` |
+| — | Trazas navegables | `trazas-navegables.md` |
+
+### Números medidos
+
+| Métrica | Valor |
 |---|---|
-| T0.1 APIs habilitadas | listo |
-| T0.2 VPC + flow logs (Terraform) | escrito y validado |
-| T0.3 GKE Estándar (Terraform) | escrito y validado |
-| T0.4 Cloud SQL IP privada (Terraform) | escrito y validado |
-| A.1 código de `data-service` | listo |
-| A.3 manifiestos de los 3 servicios | escritos |
-| B.1 Alertmanager en compose | listo |
-| B.2 regla de correlación 2σ | escrita |
-| B.3 `alert-enricher` (trace_id) | escrito |
-| B.4 alerta de contraste con umbral fijo | escrita |
-| C.1 métricas y alertas de tráfico anómalo | escritas |
-| C.3 panel Golden Signals de seguridad | escrito |
-| D.2/D.3 manifiestos de los dos experimentos | escritos |
+| Experimento 1 · p99 | 247 → 4.900 ms, **sin alerta** (regla ciega a latencia pura) |
+| Experimento 2 | Sin efecto: el sidecar intercepta antes que HTTPChaos |
+| Experimento 3 · tasa de error | 15,1 % |
+| Experimento 3 · p99 | 1.278 ms |
+| MTTD (condición cierta) | 3 s |
+| MTTD (hasta notificar) | ~63 s · objetivo < 120 s ✓ |
+| Spans exportados | 686, 0 fallidos |
+| Madurez | 3,25 / 5 |
 
-`terraform plan` sale limpio: **24 recursos a crear, 0 a destruir**.
+### No logrado, y por qué
 
-### Bloqueado
+- **Security Command Center**: exige organización; el proyecto cuelga de una
+  cuenta personal. Verificado por comando.
+- **El 2σ no quedó ejercitado**: con línea base de cero errores el umbral
+  degenera en «cualquier error». El mecanismo es correcto pero no está probado.
 
-**El `terraform apply` no se puede lanzar desde la sesión**: el clasificador de
-auto-mode bloquea la creación de infraestructura, en primer plano y en segundo.
-Lo tiene que ejecutar una persona.
+### Pendiente antes del destroy
 
-### Desviación del enunciado
-
-**Security Command Center no se puede activar.** Se activa a nivel de
-organización y este proyecto cuelga de una cuenta personal sin organización.
-Verificado, no supuesto:
-
-```
-$ gcloud organizations list
-Listed 0 items.
-$ gcloud scc findings list projects/otel-observability-lab-506406
-ERROR: NOT_FOUND: Requested entity was not found.
-```
-
-Lo que SCC habría aportado se sustituye por métricas basadas en registros sobre
-VPC Flow Logs, registros de firewall y registros de auditoría, que sí funcionan
-a nivel de proyecto. La cobertura no es equivalente: SCC además correlaciona con
-la inteligencia de amenazas de Google, y eso no tiene sustituto. Queda declarado
-como brecha en el módulo E.
-
-### Pendiente
-
-A.2 imágenes · A.4 Cloud Service Mesh · C.2 (bloqueado) · D.1 Chaos Mesh ·
-D.4 medición de MTTD · E.1/E.2 madurez y roadmap · F.1 reporte · F.2 guion
+1. Capturas del panel, las alertas y la malla — **Terraform los borra**
+2. Grabación del vídeo — necesita la IP viva
+3. `scripts/integrador-destruir.sh`
