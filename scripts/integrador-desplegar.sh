@@ -100,9 +100,12 @@ if fase 5; then
 
   # El esquema se inyecta como ConfigMap desde el mismo .sql que usa el
   # laboratorio local: una sola fuente de verdad para la estructura de la tabla.
+  # Las DOS tablas, no solo la del catalogo. La primera version cargo unicamente
+  # services/data-service/db/init.sql y service-b se quedo sin su tabla
+  # `inventory`, con lo que el checkout devolvia 502.
   kubectl create configmap esquema-catalogo \
     --namespace otel-lab \
-    --from-file=init.sql=services/data-service/db/init.sql \
+    --from-file=init.sql=k8s/base/esquema-integrador.sql \
     --dry-run=client -o yaml | kubectl apply -f -
 
   sed -i '' \
@@ -159,10 +162,13 @@ if fase 7; then
     --gke-cluster="${ZONA}/${CLUSTER}" \
     --enable-workload-identity \
     --project "$PROYECTO" || verde "ya estaba registrado"
+  # --location es la REGION de la membresia, no la zona del cluster. Con la
+  # zona, la API responde "Location us-central1-a is not found or access is
+  # unauthorized", que suena a problema de permisos y no lo es.
   gcloud container fleet mesh update \
     --management automatic \
     --memberships "$CLUSTER" \
-    --location "$ZONA" \
+    --location "$REGION" \
     --project "$PROYECTO"
 
   verde "esperando al plano de control gestionado"

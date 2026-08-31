@@ -70,10 +70,18 @@ data:
         log:
           default_log_name: otel-lab
       googlemanagedprometheus:
-        # Sin esto el exportador anade el sufijo de unidad y
-        # checkout_duration_ms pasa a llamarse checkout_duration_ms_milliseconds,
-        # rompiendo todas las consultas del panel. Ya mordio una vez en la fase 2.
-        add_metric_suffixes: false
+        metric:
+          # VA ANIDADO BAJO `metric`, no al mismo nivel. Puesto arriba, el
+          # Collector arranca y muere con "'' has invalid keys:
+          # add_metric_suffixes" en bucle. Asi esta en
+          # collector/otel-collector-gcp.yaml, que si funciona en Cloud Run;
+          # aqui se aplano al transcribirlo.
+          #
+          # Sin esta opcion el exportador anade el sufijo de unidad y
+          # checkout_duration_ms pasa a llamarse
+          # checkout_duration_ms_milliseconds, rompiendo todas las consultas del
+          # panel y la alerta del modulo B.
+          add_metric_suffixes: false
 
     service:
       pipelines:
